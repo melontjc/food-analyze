@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Connection {
+  id            String   @id @default(cuid())
+  provider      String   @unique
+  encryptedData String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model MealEntry {
+  id                 String     @id @default(cuid())
+  dateKey            String
+  status             String     @default("draft")
+  imageUrl           String?
+  compressedImageUrl String?
+  userDescription    String?
+  originalBytes      Int?
+  compressedBytes    Int?
+  finalKcal          Int?
+  modelKcal          Int?
+  confidence         Float?
+  uncertainty        String?
+  notes              String?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+  items              MealItem[]
+
+  @@index([dateKey, status])
+}
+
+model MealItem {
+  id          String    @id @default(cuid())
+  mealEntryId String
+  name        String
+  portion     String?
+  kcal        Int
+  confidence  Float?
+  createdAt   DateTime  @default(now())
+  mealEntry   MealEntry @relation(fields: [mealEntryId], references: [id], onDelete: Cascade)
+}
+
+model DailyBurn {
+  id                    String   @id @default(cuid())
+  dateKey               String   @unique
+  ouraRestingKcal       Int?
+  ouraActiveKcal        Int?
+  ouraTotalKcal         Int?
+  intervalsTrainingKcal Int?
+  totalBurnKcal         Int?
+  sourceStatus          String?
+  syncedAt              DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model WeightEntry {
+  id        String   @id @default(cuid())
+  dateKey   String   @unique
+  weightKg  Float
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TrainingActivity {
+  id         String   @id @default(cuid())
+  intervalsId String  @unique
+  dateKey    String
+  name       String
+  type       String?
+  durationSec Int?
+  calories   Int?
+  startedAt  DateTime?
+  raw         String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([dateKey])
+}
+
+model SyncRun {
+  id        String   @id @default(cuid())
+  source    String
+  status    String
+  message   String?
+  startedAt DateTime @default(now())
+  endedAt   DateTime?
+}
