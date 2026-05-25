@@ -617,6 +617,8 @@ function DraftCard({
   onKcal: (value: string) => void;
   onConfirm: () => void;
 }) {
+  const draftImageUrl = draft.compressedImageUrl || draft.imageUrl;
+
   return (
     <div className="panel p-4 sm:p-5">
       <div className="mb-4 flex items-start justify-between gap-4">
@@ -636,16 +638,19 @@ function DraftCard({
           </button>
         </div>
       </div>
-      <div className="grid gap-2">
-        {draft.items.map((item) => (
-          <div key={item.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-            <div className="flex justify-between gap-3 font-medium">
-              <span>{item.name}</span>
-              <span>{item.kcal} kcal</span>
+      <div className="grid gap-3 sm:grid-cols-[112px_minmax(0,1fr)]">
+        <MealThumbnail url={draftImageUrl} label="上传图片" />
+        <div className="grid gap-2">
+          {draft.items.map((item) => (
+            <div key={item.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+              <div className="flex justify-between gap-3 font-medium">
+                <span>{item.name}</span>
+                <span>{item.kcal} kcal</span>
+              </div>
+              <p className="mt-1 text-sm text-slate-500">{item.portion || "份量未确定"}</p>
             </div>
-            <p className="mt-1 text-sm text-slate-500">{item.portion || "份量未确定"}</p>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
       {draft.notes && !looksMojibake(draft.notes) ? <p className="mt-3 text-sm text-slate-600">{draft.notes}</p> : null}
       {draft.uncertainty && !looksMojibake(draft.uncertainty) ? <p className="mt-2 text-sm text-amber-700">{draft.uncertainty}</p> : null}
@@ -742,13 +747,16 @@ function TodayMeals({ meals, syncedAt }: { meals: MealEntry[]; syncedAt: string 
       <div className="space-y-3">
         {meals.length ? (
           meals.map((meal) => (
-            <div key={meal.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-              <div className="flex justify-between gap-3">
-                <span className="font-medium">{meal.items.map((item) => item.name).join("、") || "餐食"}</span>
-                <span className="font-semibold">{meal.finalKcal} kcal</span>
+            <div key={meal.id} className="flex gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+              <MealThumbnail url={meal.compressedImageUrl || meal.imageUrl} label="餐食图片" compact />
+              <div className="min-w-0 flex-1">
+                <div className="flex justify-between gap-3">
+                  <span className="truncate font-medium">{meal.items.map((item) => item.name).join("、") || "餐食"}</span>
+                  <span className="shrink-0 font-semibold">{meal.finalKcal} kcal</span>
+                </div>
+                {meal.userDescription ? <p className="mt-1 text-sm text-slate-500">{meal.userDescription}</p> : null}
+                <p className="mt-1 text-sm text-slate-500">{meal.notes || meal.uncertainty || "已确认"}</p>
               </div>
-              {meal.userDescription ? <p className="mt-1 text-sm text-slate-500">{meal.userDescription}</p> : null}
-              <p className="mt-1 text-sm text-slate-500">{meal.notes || meal.uncertainty || "已确认"}</p>
             </div>
           ))
         ) : (
@@ -756,6 +764,24 @@ function TodayMeals({ meals, syncedAt }: { meals: MealEntry[]; syncedAt: string 
         )}
       </div>
     </section>
+  );
+}
+
+function MealThumbnail({ url, label, compact }: { url: string | null; label: string; compact?: boolean }) {
+  const sizeClass = compact ? "h-14 w-14" : "h-28 w-full sm:h-full sm:min-h-24 sm:w-28";
+  if (!url) {
+    return (
+      <div className={`${sizeClass} flex shrink-0 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white text-xs text-slate-400`}>
+        无图片
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${sizeClass} shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white`}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={url} alt={label} className="h-full w-full object-cover" />
+    </div>
   );
 }
 
