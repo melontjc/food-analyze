@@ -221,42 +221,48 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   }, [draft]);
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto flex w-full max-w-[1440px] gap-6 px-4 py-4 sm:px-6 lg:px-8">
-        <aside className="sticky top-4 hidden h-[calc(100vh-32px)] w-64 shrink-0 rounded-lg border border-slate-200 bg-slate-950 p-4 text-white shadow-sm lg:block">
-          <div className="flex items-center gap-3 px-2 py-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600">
-              <Utensils size={20} />
-            </div>
-            <div>
-              <p className="text-sm text-slate-400">Food Deficit</p>
-              <h1 className="text-lg font-semibold">热量看板</h1>
-            </div>
+    <main className="min-h-screen bg-[linear-gradient(135deg,#fff7ed_0%,#f8fafc_44%,#eef2ff_100%)] px-3 py-3 text-slate-900 sm:px-5 sm:py-5">
+      <div className="mx-auto grid min-h-[calc(100vh-40px)] w-full max-w-[1640px] gap-5 rounded-lg border border-white/70 bg-white/55 p-3 shadow-2xl shadow-slate-300/30 backdrop-blur md:p-5 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="hidden rounded-lg border border-white/70 bg-white/80 p-5 shadow-sm lg:flex lg:flex-col">
+          <div className="px-1 py-2">
+            <p className="text-3xl font-black tracking-normal text-fuchsia-600">TRACKER</p>
+            <p className="mt-1 text-sm font-medium text-slate-500">Food Deficit Studio</p>
           </div>
           <nav className="mt-8 space-y-2 text-sm">
-            <SideItem icon={<Gauge size={18} />} label="今日概览" active />
+            <SideItem icon={<Gauge size={18} />} label="Dashboard" active />
             <SideItem icon={<Camera size={18} />} label="餐食识别" />
-            <SideItem icon={<BarChart3 size={18} />} label="趋势分析" />
+            <SideItem icon={<BarChart3 size={18} />} label="周/月统计" />
             <SideItem icon={<Weight size={18} />} label="体重追踪" />
+            <SideItem icon={<Activity size={18} />} label="数据同步" />
+            <SideItem icon={<Settings size={18} />} label="设置" href="/settings" />
           </nav>
-          <div className="absolute bottom-4 left-4 right-4 rounded-lg border border-slate-800 bg-slate-900 p-3 text-sm text-slate-300">
-            <p className="font-medium text-white">同步状态</p>
-            <p className="mt-1 text-xs">{dashboard?.today.syncedAt ? new Date(dashboard.today.syncedAt).toLocaleString() : "消耗数据未同步"}</p>
+          <div className="mt-auto rounded-lg border border-fuchsia-100 bg-fuchsia-50 p-4 text-center">
+            <p className="text-sm font-semibold text-fuchsia-700">同步状态</p>
+            <p className="mt-2 text-xs leading-5 text-slate-500">{dashboard?.today.syncedAt ? new Date(dashboard.today.syncedAt).toLocaleString() : "消耗数据未同步"}</p>
+            <button onClick={syncNow} className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-fuchsia-600 px-4 text-sm font-semibold text-white disabled:opacity-60" disabled={syncing}>
+              <RefreshCw size={16} className={syncing ? "animate-spin" : ""} />
+              同步
+            </button>
           </div>
         </aside>
 
-        <div className="min-w-0 flex-1">
-          <header className="mb-5 flex flex-col gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-medium text-blue-600">Personal Analytics</p>
-              <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-950">热量缺口仪表盘</h2>
+        <section className="min-w-0">
+          <header className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-h-14 items-center gap-3 rounded-lg border border-white/80 bg-white/80 px-4 shadow-sm">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
+                <Flame size={22} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-950">今日热量任务</p>
+                <p className="text-xs text-slate-500">先记录餐食，再查看真实缺口趋势</p>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <input
                 type="date"
                 value={dateKey}
                 onChange={(event) => setDateKey(event.target.value)}
-                className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500"
+                className="h-11 rounded-lg border border-white/80 bg-white px-3 text-sm shadow-sm outline-none focus:border-fuchsia-400"
               />
               <button onClick={syncNow} className="icon-button" aria-label="同步">
                 <RefreshCw size={18} className={syncing ? "animate-spin" : ""} />
@@ -267,59 +273,201 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
             </div>
           </header>
 
-          <section className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Metric icon={<Utensils size={19} />} label="摄入" value={kcalText(dashboard?.today.intakeKcal)} accent="blue" />
-            <Metric icon={<Flame size={19} />} label="总消耗" value={totalBurnText(dashboard?.today)} muted={!dashboard?.today.totalBurnKcal} accent="amber" />
-            <Metric icon={<Activity size={19} />} label="ICU参考" value={kcalText(dashboard?.today.intervalsTrainingKcal)} accent="violet" />
-            <Metric icon={<TrendingDown size={19} />} label="缺口" value={deficitText(dashboard?.today)} accent="emerald" />
-          </section>
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="space-y-5">
+              <MissionCard dashboard={dashboard} />
 
-          <section className="mb-5 grid gap-5 xl:grid-cols-[1.12fr_0.88fr]">
-            <UploadPanel
-              inputRef={inputRef}
-              loading={loading}
-              selectedFile={selectedFile}
-              previewUrl={previewUrl}
-              mealContext={mealContext}
-              error={error}
-              onChoose={chooseFile}
-              onPick={() => inputRef.current?.click()}
-              onContext={setMealContext}
-              onAnalyze={analyze}
-            />
+              <section className="grid gap-5 2xl:grid-cols-[1.05fr_0.95fr]">
+                <UploadPanel
+                  inputRef={inputRef}
+                  loading={loading}
+                  selectedFile={selectedFile}
+                  previewUrl={previewUrl}
+                  mealContext={mealContext}
+                  error={error}
+                  onChoose={chooseFile}
+                  onPick={() => inputRef.current?.click()}
+                  onContext={setMealContext}
+                  onAnalyze={analyze}
+                />
+                {draft ? (
+                  <DraftCard draft={draft} kcal={kcal} compression={compression} onKcal={setKcal} onConfirm={confirmDraft} />
+                ) : (
+                  <ClassificationCard />
+                )}
+              </section>
 
-            <div className="grid gap-5">
-              <WeightInputCard dateKey={dateKey} value={weightInput} saving={weightSaving} onChange={setWeightInput} onSave={saveWeight} />
-              {draft ? (
-                <DraftCard draft={draft} kcal={kcal} compression={compression} onKcal={setKcal} onConfirm={confirmDraft} />
-              ) : (
-                <EmptyDraftCard />
-              )}
+              <section className="grid gap-5 2xl:grid-cols-[1.1fr_0.9fr]">
+                <TrendCard dashboard={dashboard} />
+                <WeightChartCard days={dashboard?.days || []} />
+              </section>
+
+              <MonthlyStatsCard dashboard={dashboard} />
             </div>
-          </section>
 
-          <section className="mb-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-            <TrendCard dashboard={dashboard} />
-            <WeightChartCard days={dashboard?.days || []} />
-          </section>
-
-          <section className="mb-5">
-            <MonthlyStatsCard dashboard={dashboard} />
-          </section>
-
-          <TodayMeals meals={dashboard?.today.meals || []} syncedAt={dashboard?.today.syncedAt || null} />
-        </div>
+            <aside className="space-y-5">
+              <DailySummaryCard dashboard={dashboard} dateKey={dateKey} />
+              <WeightInputCard dateKey={dateKey} value={weightInput} saving={weightSaving} onChange={setWeightInput} onSave={saveWeight} />
+              <TipsCard />
+              <TodayMeals meals={dashboard?.today.meals || []} syncedAt={dashboard?.today.syncedAt || null} />
+            </aside>
+          </div>
+        </section>
       </div>
     </main>
   );
 }
 
-function SideItem({ icon, label, active }: { icon: React.ReactNode; label: string; active?: boolean }) {
-  return (
-    <div className={`flex items-center gap-3 rounded-md px-3 py-2.5 ${active ? "bg-blue-600 text-white" : "text-slate-400"}`}>
+function SideItem({ icon, label, active, href }: { icon: React.ReactNode; label: string; active?: boolean; href?: string }) {
+  const content = (
+    <>
       {icon}
       <span>{label}</span>
+    </>
+  );
+  const className = `flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium transition ${active ? "bg-fuchsia-100 text-fuchsia-700" : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"}`;
+
+  return href ? (
+    <Link href={href} className={className}>
+      {content}
+    </Link>
+  ) : (
+    <div className={className}>{content}</div>
+  );
+}
+
+function MissionCard({ dashboard }: { dashboard: Dashboard | null }) {
+  const today = dashboard?.today;
+  const intake = today?.intakeKcal ?? 0;
+  const totalBurn = today?.totalBurnKcal ?? 0;
+  const deficit = today?.deficitKcal;
+  const progress = totalBurn > 0 ? Math.min(100, Math.round((intake / totalBurn) * 100)) : 0;
+  const deficitProgress = deficit == null || totalBurn <= 0 ? 0 : Math.min(100, Math.round((Math.max(0, deficit) / totalBurn) * 100));
+  const weekProgress = dashboard?.weekDeficitKcal && dashboard.weekDeficitKcal > 0 ? Math.min(100, Math.round((dashboard.weekDeficitKcal / 3850) * 100)) : 0;
+
+  return (
+    <section className="panel p-5">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-fuchsia-600">Today Mission</p>
+          <h2 className="text-2xl font-semibold tracking-normal text-slate-950">今日热量任务</h2>
+        </div>
+        <span className="rounded-lg bg-orange-50 px-3 py-1.5 text-sm font-medium text-orange-600">{today?.mealCount ? "餐食已录入" : "等待餐食"}</span>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[330px_minmax(0,1fr)]">
+        <div className="flex items-center justify-center">
+          <div className="relative h-72 w-72">
+            <svg viewBox="0 0 220 220" className="h-full w-full -rotate-90">
+              <circle cx="110" cy="110" r="92" fill="none" stroke="#f3e8ff" strokeWidth="8" />
+              <circle cx="110" cy="110" r="92" fill="none" stroke="#a855f7" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${progress * 5.78} 578`} />
+              <circle cx="110" cy="110" r="72" fill="none" stroke="#ffedd5" strokeWidth="8" />
+              <circle cx="110" cy="110" r="72" fill="none" stroke="#fb923c" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${deficitProgress * 4.52} 452`} />
+              <circle cx="110" cy="110" r="52" fill="none" stroke="#dcfce7" strokeWidth="8" />
+              <circle cx="110" cy="110" r="52" fill="none" stroke="#22c55e" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${weekProgress * 3.26} 326`} />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+              <Flame size={28} className="mb-2 text-slate-950" />
+              <p className="text-3xl font-bold tracking-normal text-slate-950">{Math.round(intake)} / {Math.round(totalBurn || 0)}</p>
+              <p className="text-sm text-slate-500">kcal 摄入 / 总消耗</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <MissionMetric dot="bg-blue-500" label="摄入热量" value={kcalText(today?.intakeKcal)} />
+          <MissionMetric dot="bg-orange-400" label="Oura 总消耗" value={totalBurnText(today)} />
+          <MissionMetric dot="bg-emerald-500" label="今日缺口" value={deficitText(today)} />
+          <MissionMetric dot="bg-violet-500" label="ICU 训练参考" value={kcalText(today?.intervalsTrainingKcal)} />
+          <MissionMetric dot="bg-rose-400" label="本周累计缺口" value={kcalText(dashboard?.weekDeficitKcal)} />
+          <MissionMetric dot="bg-slate-300" label="本周预计下降" value={`${dashboard?.predictedWeightLossJin.toFixed(2) || "0.00"} 斤`} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MissionMetric({ dot, label, value }: { dot: string; label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-100 bg-white/70 p-4 shadow-sm">
+      <p className="flex items-center gap-2 text-sm text-slate-500"><span className={`h-2.5 w-2.5 rounded-full ${dot}`} />{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
     </div>
+  );
+}
+
+function DailySummaryCard({ dashboard, dateKey }: { dashboard: Dashboard | null; dateKey: string }) {
+  const today = dashboard?.today;
+  return (
+    <section className="panel overflow-hidden">
+      <div className="flex items-center gap-3 bg-orange-100 px-5 py-4">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-slate-950">
+          <Gauge size={19} />
+        </div>
+        <div>
+          <p className="text-sm text-orange-700">当前日期</p>
+          <h3 className="text-lg font-semibold text-slate-950">{dateKey}</h3>
+        </div>
+      </div>
+      <div className="p-5">
+        <p className="text-3xl font-bold text-slate-950">{deficitText(today)}</p>
+        <p className="mt-1 text-sm text-slate-500">今日热量缺口</p>
+        <div className="mt-5 space-y-3 text-sm">
+          <SummaryRow label="摄入" value={kcalText(today?.intakeKcal)} />
+          <SummaryRow label="总消耗" value={totalBurnText(today)} />
+          <SummaryRow label="餐食记录" value={`${today?.mealCount || 0} 条`} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2 last:border-b-0 last:pb-0">
+      <span className="text-slate-500">{label}</span>
+      <span className="font-semibold text-slate-950">{value}</span>
+    </div>
+  );
+}
+
+function TipsCard() {
+  return (
+    <section className="panel overflow-hidden p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-slate-500">Function Map</p>
+          <h3 className="text-lg font-semibold">功能分类</h3>
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+          <BarChart3 size={20} />
+        </div>
+      </div>
+      <div className="space-y-3 text-sm">
+        <SummaryRow label="餐食识别" value="图片 + 文本" />
+        <SummaryRow label="消耗来源" value="Oura 总消耗" />
+        <SummaryRow label="训练数据" value="ICU 参考" />
+        <SummaryRow label="统计周期" value="本周 / 4 周" />
+      </div>
+    </section>
+  );
+}
+
+function ClassificationCard() {
+  return (
+    <section className="panel flex min-h-full flex-col justify-center p-5">
+      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-fuchsia-50 text-fuchsia-600">
+        <LineChart size={24} />
+      </div>
+      <p className="text-sm font-medium text-fuchsia-600">Analysis Flow</p>
+      <h3 className="mt-1 text-xl font-semibold">餐食先生成草稿</h3>
+      <p className="mt-3 text-sm leading-6 text-slate-500">图片和补充说明一起发送。你确认热量后，才会计入摄入、缺口、本周和月度统计。</p>
+      <div className="mt-5 grid gap-2 text-sm text-slate-600">
+        <div className="rounded-lg bg-slate-50 px-3 py-2">1. 上传图片</div>
+        <div className="rounded-lg bg-slate-50 px-3 py-2">2. 填写重量/做法/店铺</div>
+        <div className="rounded-lg bg-slate-50 px-3 py-2">3. 确认 kcal 后入账</div>
+      </div>
+    </section>
   );
 }
 
@@ -350,7 +498,7 @@ function UploadPanel({
     <div className="panel p-4 sm:p-5">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium text-blue-600">Meal Vision</p>
+          <p className="text-sm font-medium text-fuchsia-600">Meal Vision</p>
           <h3 className="text-lg font-semibold">上传餐食图片</h3>
         </div>
         <Camera className="text-slate-400" size={22} />
@@ -370,11 +518,11 @@ function UploadPanel({
       <button
         onClick={onPick}
         disabled={loading}
-        className="flex min-h-64 w-full flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-6 py-12 text-blue-700 transition hover:border-blue-500 hover:bg-blue-100 disabled:opacity-70"
+        className="flex min-h-64 w-full flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-fuchsia-300 bg-fuchsia-50 px-6 py-12 text-fuchsia-700 transition hover:border-fuchsia-500 hover:bg-fuchsia-100 disabled:opacity-70"
       >
         {loading ? <CloudCog size={52} className="animate-pulse" /> : <Upload size={58} />}
         <span className="text-3xl font-semibold">{loading ? "分析中" : "上传图片"}</span>
-        <span className="text-sm text-blue-500">先选图，再填写重量、做法或店铺</span>
+        <span className="text-sm text-fuchsia-500">先选图，再填写重量、做法或店铺</span>
       </button>
 
       {previewUrl ? (
@@ -394,14 +542,14 @@ function UploadPanel({
           value={mealContext}
           onChange={(event) => onContext(event.target.value)}
           rows={4}
-          className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-100"
           placeholder="例如：米饭约 180g；鸡胸肉空气炸锅少油；麦当劳板烧鸡腿堡一份；海底捞番茄锅里捞出的牛肉约 120g"
         />
       </label>
       <button
         onClick={onAnalyze}
         disabled={loading || !selectedFile}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-4 text-base font-semibold text-white shadow-sm shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-600 px-5 py-4 text-base font-semibold text-white shadow-sm shadow-fuchsia-600/20 transition hover:bg-fuchsia-700 disabled:cursor-not-allowed disabled:bg-slate-300"
       >
         {loading ? <CloudCog size={19} className="animate-pulse" /> : <Send size={19} />}
         {loading ? "正在分析" : "发送并分析餐食"}
@@ -443,7 +591,7 @@ function WeightInputCard({
             onChange={(event) => onChange(event.target.value)}
             inputMode="decimal"
             placeholder="例如 76.4"
-            className="h-12 w-full rounded-lg border border-slate-200 bg-white px-3 pr-10 text-lg font-semibold outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          className="h-12 w-full rounded-lg border border-slate-200 bg-white px-3 pr-10 text-lg font-semibold outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-100"
           />
           <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">kg</span>
         </div>
@@ -481,7 +629,7 @@ function DraftCard({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <input value={kcal} onChange={(event) => onKcal(event.target.value)} className="h-10 w-28 rounded-lg border border-slate-200 px-3 text-right font-semibold outline-none focus:border-blue-500" inputMode="numeric" />
+          <input value={kcal} onChange={(event) => onKcal(event.target.value)} className="h-10 w-28 rounded-lg border border-slate-200 px-3 text-right font-semibold outline-none focus:border-fuchsia-500" inputMode="numeric" />
           <button onClick={onConfirm} className="flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 font-semibold text-white">
             <Check size={17} />
             确认
