@@ -41,6 +41,7 @@ type MealEntry = {
 type DashboardDay = {
   dateKey: string;
   intakeKcal: number;
+  mealCount: number;
   weightKg: number | null;
   totalBurnKcal: number | null;
   deficitKcal: number | null;
@@ -270,7 +271,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
             <Metric icon={<Utensils size={19} />} label="摄入" value={kcalText(dashboard?.today.intakeKcal)} accent="blue" />
             <Metric icon={<Flame size={19} />} label="总消耗" value={totalBurnText(dashboard?.today)} muted={!dashboard?.today.totalBurnKcal} accent="amber" />
             <Metric icon={<Activity size={19} />} label="ICU参考" value={kcalText(dashboard?.today.intervalsTrainingKcal)} accent="violet" />
-            <Metric icon={<TrendingDown size={19} />} label="缺口" value={kcalText(dashboard?.today.deficitKcal)} accent="emerald" />
+            <Metric icon={<TrendingDown size={19} />} label="缺口" value={deficitText(dashboard?.today)} accent="emerald" />
           </section>
 
           <section className="mb-5 grid gap-5 xl:grid-cols-[1.12fr_0.88fr]">
@@ -617,16 +618,17 @@ function ComboTrendChart({ days }: { days: DashboardDay[] }) {
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
   const intake = days.map((day) => day.intakeKcal || 0);
-  const deficit = days.map((day) => day.deficitKcal || 0);
-  const maxValue = niceCeil(Math.max(500, ...intake, ...deficit.map((value) => Math.max(0, value))));
-  const minValue = Math.min(0, ...deficit);
+  const deficit = days.map((day) => day.deficitKcal);
+  const validDeficits = deficit.filter((value): value is number => value != null);
+  const maxValue = niceCeil(Math.max(500, ...intake, ...validDeficits.map((value) => Math.max(0, value))));
+  const minValue = Math.min(0, ...validDeficits);
   const minAxis = minValue < 0 ? -niceCeil(Math.abs(minValue)) : 0;
   const y = (value: number) => padding.top + ((maxValue - value) / (maxValue - minAxis || 1)) * chartH;
   const zeroY = y(0);
   const x = (index: number) => padding.left + (days.length <= 1 ? chartW / 2 : (chartW / (days.length - 1)) * index);
   const bandW = chartW / Math.max(1, days.length);
   const barWidth = Math.max(14, Math.min(44, bandW - 18));
-  const linePoints = deficit.map((value, index) => `${x(index)},${y(value)}`).join(" ");
+  const linePoints = deficit.map((value, index) => (value == null ? null : `${x(index)},${y(value)}`)).filter(Boolean).join(" ");
   const ticks = minAxis < 0 ? [minAxis, 0, maxValue] : [0, Math.round(maxValue / 2), maxValue];
 
   return (
@@ -653,7 +655,7 @@ function ComboTrendChart({ days }: { days: DashboardDay[] }) {
                 chartTop={padding.top}
                 chartHeight={chartH}
                 width={width}
-                lines={[day.dateKey, `摄入 ${Math.round(day.intakeKcal || 0)} kcal`, `缺口 ${day.deficitKcal == null ? "缺失" : `${Math.round(day.deficitKcal)} kcal`}`]}
+                lines={[day.dateKey, `摄入 ${Math.round(day.intakeKcal || 0)} kcal`, `缺口 ${day.deficitKcal == null ? "未统计" : `${Math.round(day.deficitKcal)} kcal`}`]}
               />
               <text x={x(index)} y={height - 18} textAnchor="middle" className="fill-slate-500 text-[12px]">
                 {day.dateKey.slice(5)}
@@ -661,13 +663,15 @@ function ComboTrendChart({ days }: { days: DashboardDay[] }) {
             </g>
           );
         })}
-        <polyline points={linePoints} fill="none" stroke="#059669" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
-        {deficit.map((value, index) => (
-          <g key={`${days[index]?.dateKey}-point`}>
-            <circle cx={x(index)} cy={y(value)} r="4.5" fill="#059669" />
-            <circle cx={x(index)} cy={y(value)} r="2" fill="#ffffff" />
-          </g>
-        ))}
+        {linePoints ? <polyline points={linePoints} fill="none" stroke="#059669" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {deficit.map((value, index) =>
+          value == null ? null : (
+            <g key={`${days[index]?.dateKey}-point`}>
+              <circle cx={x(index)} cy={y(value)} r="4.5" fill="#059669" />
+              <circle cx={x(index)} cy={y(value)} r="2" fill="#ffffff" />
+            </g>
+          )
+        )}
       </svg>
     </div>
   );
@@ -883,6 +887,12 @@ function totalBurnText(today: Dashboard["today"] | undefined) {
 function kcalText(value: number | null | undefined) {
   if (value == null) return "未同步";
   return `${Math.round(value)} kcal`;
+}
+
+function deficitText(today: DashboardDay | undefined) {
+  if (!today) return "未同步";
+  if (today.mealCount === 0) return "未统计";
+  return kcalText(today.deficitKcal);
 }
 
 function looksMojibake(value: string) {

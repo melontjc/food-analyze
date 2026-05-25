@@ -22,10 +22,11 @@ export async function getDashboard(dateKey: string) {
     const intakeKcal = dayMeals.reduce((total, meal) => total + (meal.finalKcal || 0), 0);
     const burn = burns.find((item) => item.dateKey === key) || null;
     const totalBurnKcal = burn?.ouraTotalKcal ?? null;
-    const deficitKcal = totalBurnKcal == null ? null : totalBurnKcal - intakeKcal;
+    const deficitKcal = totalBurnKcal == null || dayMeals.length === 0 ? null : totalBurnKcal - intakeKcal;
     return {
       dateKey: key,
       intakeKcal,
+      mealCount: dayMeals.length,
       weightKg: weights.find((item) => item.dateKey === key)?.weightKg ?? null,
       ouraRestingKcal: burn?.ouraRestingKcal ?? null,
       ouraTotalKcal: burn?.ouraTotalKcal ?? null,
