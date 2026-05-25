@@ -6,5 +6,7 @@ node_modules
 dist
 coverage
 *.log
+HANDOFF_LOCAL.md
+vercel-import.env
 prisma/*.db
 prisma/*.db-journal
