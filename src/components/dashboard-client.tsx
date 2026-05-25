@@ -32,6 +32,7 @@ type Dashboard = {
   dateKey: string;
   today: DashboardDay & {
     ouraRestingKcal: number | null;
+    ouraTotalKcal: number | null;
     intervalsTrainingKcal: number | null;
     meals: MealEntry[];
     sourceStatus: string;
@@ -259,8 +260,8 @@ export default function DashboardClient({ initialDate }: { initialDate: string }
         <div className="grid gap-4">
           <div className="metric-grid">
             <Metric label="摄入" value={kcalText(dashboard?.today.intakeKcal)} />
-            <Metric label="静息" value={restingText(dashboard?.today)} muted={!dashboard?.today.ouraRestingKcal} />
-            <Metric label="训练" value={kcalText(dashboard?.today.intervalsTrainingKcal)} />
+            <Metric label="总消耗" value={totalBurnText(dashboard?.today)} muted={!dashboard?.today.totalBurnKcal} />
+            <Metric label="ICU参考" value={kcalText(dashboard?.today.intervalsTrainingKcal)} />
             <Metric label="缺口" value={kcalText(dashboard?.today.deficitKcal)} highlight />
           </div>
           <WeightInputCard
@@ -601,9 +602,9 @@ function latestWeightText(days: DashboardDay[]) {
   return latest?.weightKg == null ? "未录入" : `${latest.weightKg.toFixed(1)} kg`;
 }
 
-function restingText(today: Dashboard["today"] | undefined) {
+function totalBurnText(today: Dashboard["today"] | undefined) {
   if (!today) return "未同步";
-  if (today.ouraRestingKcal != null) return kcalText(today.ouraRestingKcal);
+  if (today.totalBurnKcal != null) return kcalText(today.totalBurnKcal);
   if (today.sourceStatus.includes("oura:missing")) return "未连接 Oura";
   return "未同步";
 }

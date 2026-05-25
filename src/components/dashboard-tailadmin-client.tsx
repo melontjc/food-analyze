@@ -45,18 +45,31 @@ type DashboardDay = {
   totalBurnKcal: number | null;
   deficitKcal: number | null;
 };
+type WeekSummary = {
+  startDateKey: string;
+  endDateKey: string;
+  label: string;
+  intakeKcal: number;
+  deficitKcal: number;
+  latestWeightKg: number | null;
+};
 type Dashboard = {
   dateKey: string;
   today: DashboardDay & {
     ouraRestingKcal: number | null;
+    ouraTotalKcal: number | null;
     intervalsTrainingKcal: number | null;
     meals: MealEntry[];
     sourceStatus: string;
     syncedAt: string | null;
   };
   days: DashboardDay[];
+  weeks: WeekSummary[];
+  weekDeficitKcal: number;
   sevenDayDeficitKcal: number;
+  fourWeekDeficitKcal: number;
   predictedWeightLossJin: number;
+  predictedFourWeekWeightLossJin: number;
 };
 
 export default function DashboardTailAdminClient({ initialDate }: { initialDate: string }) {
@@ -255,8 +268,8 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
 
           <section className="mb-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Metric icon={<Utensils size={19} />} label="摄入" value={kcalText(dashboard?.today.intakeKcal)} accent="blue" />
-            <Metric icon={<Flame size={19} />} label="静息" value={restingText(dashboard?.today)} muted={!dashboard?.today.ouraRestingKcal} accent="amber" />
-            <Metric icon={<Activity size={19} />} label="训练" value={kcalText(dashboard?.today.intervalsTrainingKcal)} accent="violet" />
+            <Metric icon={<Flame size={19} />} label="总消耗" value={totalBurnText(dashboard?.today)} muted={!dashboard?.today.totalBurnKcal} accent="amber" />
+            <Metric icon={<Activity size={19} />} label="ICU参考" value={kcalText(dashboard?.today.intervalsTrainingKcal)} accent="violet" />
             <Metric icon={<TrendingDown size={19} />} label="缺口" value={kcalText(dashboard?.today.deficitKcal)} accent="emerald" />
           </section>
 
@@ -287,6 +300,10 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
           <section className="mb-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
             <TrendCard dashboard={dashboard} />
             <WeightChartCard days={dashboard?.days || []} />
+          </section>
+
+          <section className="mb-5">
+            <MonthlyStatsCard dashboard={dashboard} />
           </section>
 
           <TodayMeals meals={dashboard?.today.meals || []} syncedAt={dashboard?.today.syncedAt || null} />
@@ -506,7 +523,7 @@ function TrendCard({ dashboard }: { dashboard: Dashboard | null }) {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-slate-500">Calorie Trend</p>
-          <h3 className="text-lg font-semibold">7 日热量趋势</h3>
+          <h3 className="text-lg font-semibold">本周热量趋势</h3>
         </div>
         <div className="flex items-center gap-4 text-xs text-slate-500">
           <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-500" />摄入热量</span>
@@ -515,26 +532,49 @@ function TrendCard({ dashboard }: { dashboard: Dashboard | null }) {
       </div>
       <ComboTrendChart days={days} />
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <SmallStat label="7 日累计缺口" value={kcalText(dashboard?.sevenDayDeficitKcal)} />
+        <SmallStat label="本周累计缺口" value={kcalText(dashboard?.weekDeficitKcal ?? dashboard?.sevenDayDeficitKcal)} />
         <SmallStat label="预计下降" value={`${dashboard?.predictedWeightLossJin.toFixed(2) || "0.00"} 斤`} />
       </div>
     </div>
   );
 }
-
 function WeightChartCard({ days }: { days: DashboardDay[] }) {
   return (
     <div className="panel p-4 sm:p-5">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-medium text-slate-500">Weight Trend</p>
-          <h3 className="text-lg font-semibold">7 日体重追踪</h3>
+          <h3 className="text-lg font-semibold">本周体重追踪</h3>
         </div>
         <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">手动录入</span>
       </div>
       <WeightLineChart days={days} />
       <div className="mt-4">
         <SmallStat label="最新体重" value={latestWeightText(days)} />
+      </div>
+    </div>
+  );
+}
+
+function MonthlyStatsCard({ dashboard }: { dashboard: Dashboard | null }) {
+  const weeks = dashboard?.weeks || [];
+  return (
+    <div className="panel p-4 sm:p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-slate-500">Monthly Summary</p>
+          <h3 className="text-lg font-semibold">月度统计</h3>
+        </div>
+        <div className="flex items-center gap-4 text-xs text-slate-500">
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-indigo-500" />每周缺口</span>
+          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-rose-500" />体重追踪</span>
+        </div>
+      </div>
+      <FourWeekChart weeks={weeks} />
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        <SmallStat label="4 周累计缺口" value={kcalText(dashboard?.fourWeekDeficitKcal)} />
+        <SmallStat label="4 周预计下降" value={`${dashboard?.predictedFourWeekWeightLossJin.toFixed(2) || "0.00"} 斤`} />
+        <SmallStat label="最新体重" value={latestWeeklyWeightText(weeks)} />
       </div>
     </div>
   );
@@ -591,7 +631,7 @@ function ComboTrendChart({ days }: { days: DashboardDay[] }) {
 
   return (
     <div className="overflow-hidden rounded-lg bg-slate-50">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full" role="img" aria-label="7 日摄入热量柱状图和每日缺口折线图">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full" role="img" aria-label="本周摄入热量柱状图和每日缺口折线图">
         {ticks.map((tick) => (
           <g key={tick}>
             <line x1={padding.left} x2={width - padding.right} y1={y(tick)} y2={y(tick)} stroke="#e2e8f0" strokeWidth="1" />
@@ -653,7 +693,7 @@ function WeightLineChart({ days }: { days: DashboardDay[] }) {
 
   return (
     <div className="overflow-hidden rounded-lg bg-slate-50">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full" role="img" aria-label="7 日体重折线图">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full" role="img" aria-label="本周体重折线图">
         {ticks.map((tick) => (
           <g key={tick}>
             <line x1={padding.left} x2={width - padding.right} y1={y(tick)} y2={y(tick)} stroke="#e2e8f0" strokeWidth="1" />
@@ -672,6 +712,83 @@ function WeightLineChart({ days }: { days: DashboardDay[] }) {
             </text>
           </g>
         ))}
+      </svg>
+    </div>
+  );
+}
+
+function FourWeekChart({ weeks }: { weeks: WeekSummary[] }) {
+  const width = 720;
+  const height = 260;
+  const padding = { top: 22, right: 30, bottom: 42, left: 48 };
+  const chartW = width - padding.left - padding.right;
+  const chartH = height - padding.top - padding.bottom;
+  const deficits = weeks.map((week) => week.deficitKcal || 0);
+  const weights = weeks.map((week) => week.latestWeightKg).filter((value): value is number => value != null);
+  const maxValue = niceCeil(Math.max(500, ...deficits.map((value) => Math.max(0, value))));
+  const minValue = Math.min(0, ...deficits);
+  const minAxis = minValue < 0 ? -niceCeil(Math.abs(minValue)) : 0;
+  const yDeficit = (value: number) => padding.top + ((maxValue - value) / (maxValue - minAxis || 1)) * chartH;
+  const zeroY = yDeficit(0);
+  const minWeight = weights.length ? Math.floor((Math.min(...weights) - 0.4) * 10) / 10 : 70;
+  const maxWeight = weights.length ? Math.ceil((Math.max(...weights) + 0.4) * 10) / 10 : 80;
+  const yWeight = (value: number) => padding.top + ((maxWeight - value) / (maxWeight - minWeight || 1)) * chartH;
+  const x = (index: number) => padding.left + (weeks.length <= 1 ? chartW / 2 : (chartW / (weeks.length - 1)) * index);
+  const bandW = chartW / Math.max(1, weeks.length);
+  const barWidth = Math.max(30, Math.min(70, bandW - 28));
+  const weightPoints = weeks
+    .map((week, index) => (week.latestWeightKg == null ? null : `${x(index)},${yWeight(week.latestWeightKg)}`))
+    .filter(Boolean)
+    .join(" ");
+  const ticks = minAxis < 0 ? [minAxis, 0, maxValue] : [0, Math.round(maxValue / 2), maxValue];
+
+  return (
+    <div className="overflow-hidden rounded-lg bg-slate-50">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full" role="img" aria-label="4 周热量缺口柱状图和体重折线图">
+        {ticks.map((tick) => (
+          <g key={tick}>
+            <line x1={padding.left} x2={width - padding.right} y1={yDeficit(tick)} y2={yDeficit(tick)} stroke="#e2e8f0" strokeWidth="1" />
+            <text x={padding.left - 8} y={yDeficit(tick) + 4} textAnchor="end" className="fill-slate-400 text-[11px]">
+              {Math.round(tick)}
+            </text>
+          </g>
+        ))}
+        {weeks.map((week, index) => {
+          const value = deficits[index];
+          const top = yDeficit(Math.max(0, value));
+          const bottom = yDeficit(Math.min(0, value));
+          const barY = value >= 0 ? top : zeroY;
+          const barHeight = Math.max(2, Math.abs(bottom - top));
+          return (
+            <g key={week.startDateKey} className="group">
+              <rect x={x(index) - barWidth / 2} y={barY} width={barWidth} height={barHeight} rx="6" fill="#6366f1" opacity={value === 0 ? 0.25 : 0.9} />
+              <HoverBand
+                x={x(index)}
+                bandWidth={bandW}
+                chartTop={padding.top}
+                chartHeight={chartH}
+                width={width}
+                lines={[
+                  week.label,
+                  `缺口 ${Math.round(week.deficitKcal || 0)} kcal`,
+                  `体重 ${week.latestWeightKg == null ? "未录入" : `${week.latestWeightKg.toFixed(1)} kg`}`
+                ]}
+              />
+              <text x={x(index)} y={height - 18} textAnchor="middle" className="fill-slate-500 text-[12px]">
+                {week.label}
+              </text>
+            </g>
+          );
+        })}
+        {weightPoints ? <polyline points={weightPoints} fill="none" stroke="#f43f5e" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {weeks.map((week, index) =>
+          week.latestWeightKg == null ? null : (
+            <g key={`${week.startDateKey}-weight`}>
+              <circle cx={x(index)} cy={yWeight(week.latestWeightKg)} r="4.5" fill="#f43f5e" />
+              <circle cx={x(index)} cy={yWeight(week.latestWeightKg)} r="2" fill="#ffffff" />
+            </g>
+          )
+        )}
       </svg>
     </div>
   );
@@ -751,9 +868,14 @@ function latestWeightText(days: DashboardDay[]) {
   return latest?.weightKg == null ? "未录入" : `${latest.weightKg.toFixed(1)} kg`;
 }
 
-function restingText(today: Dashboard["today"] | undefined) {
+function latestWeeklyWeightText(weeks: WeekSummary[]) {
+  const latest = [...weeks].reverse().find((week) => week.latestWeightKg != null);
+  return latest?.latestWeightKg == null ? "未录入" : `${latest.latestWeightKg.toFixed(1)} kg`;
+}
+
+function totalBurnText(today: Dashboard["today"] | undefined) {
   if (!today) return "未同步";
-  if (today.ouraRestingKcal != null) return kcalText(today.ouraRestingKcal);
+  if (today.totalBurnKcal != null) return kcalText(today.totalBurnKcal);
   if (today.sourceStatus.includes("oura:missing")) return "未连接 Oura";
   return "未同步";
 }

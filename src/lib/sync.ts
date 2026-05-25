@@ -42,10 +42,10 @@ export async function syncRecentDays(endDateKey: string, days = 8): Promise<Sync
       const restingKcal = oura ? restingCalories(oura) : null;
       const activeKcal = numberValue(oura?.active_calories);
       const totalKcal = numberValue(oura?.total_calories);
-      const totalBurnKcal = restingKcal == null && trainingKcal == null ? null : (restingKcal || 0) + (trainingKcal || 0);
+      const totalBurnKcal = totalKcal;
       const status = [
         oura ? "oura:ok" : "oura:missing",
-        intervals.length ? "intervals:ok" : "intervals:missing"
+        intervals.length ? "intervals:reference" : "intervals:missing"
       ].join(",");
 
       burns.push(
