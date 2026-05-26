@@ -58,6 +58,39 @@ export async function analyzeMealImage(imageDataUrl: string, userDescription?: s
   return mealAnalysisSchema.parse(json);
 }
 
+export async function analyzeMealText(userDescription: string): Promise<MealAnalysis> {
+  const description = userDescription.trim();
+  const payload = {
+    model: optionalEnv("OPENAI_MODEL") || "gpt-4.1-mini",
+    max_output_tokens: 900,
+    instructions:
+      "你是谨慎的餐食热量估算助手。只根据用户的文字描述估算热量；描述包含重量、烹饪手法、店铺、规格时优先使用。不要假装精确，不确定时降低 confidence 并在 uncertainty 中说明。返回严格 JSON，不要 Markdown。",
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: [
+              "请根据下面的餐食文字描述，拆分食物项并估算热量。",
+              `用户描述：${description}`,
+              "如果描述里有克数、份量、烹饪手法，按这些信息估算热量。",
+              "如果描述里有耳熟能详的连锁店和具体菜品/规格，可以结合常见标准化配方估算，但要在 notes 或 uncertainty 中说明这是标准化估算，门店、地区、加料、酱料会造成偏差。",
+              "如果缺少重量或关键做法，基于常见份量给出保守估算，并明确说明不确定项。",
+              "JSON schema: {\"items\":[{\"name\":\"string\",\"portion\":\"string\",\"kcal\":number,\"confidence\":0-1}],\"total_kcal\":number,\"confidence\":0-1,\"uncertainty\":\"string\",\"notes\":\"string\"}。"
+            ].join("\n")
+          }
+        ]
+      }
+    ]
+  };
+
+  const data = await postOpenAi(payload);
+  const text = extractResponseText(data);
+  const json = parseJson(text);
+  return mealAnalysisSchema.parse(json);
+}
+
 async function postOpenAi(payload: unknown) {
   const body = JSON.stringify(payload);
   try {

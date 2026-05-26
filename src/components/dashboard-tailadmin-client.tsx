@@ -127,17 +127,18 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   }
 
   async function analyze() {
-    if (!selectedFile) {
-      setError("请先选择餐食图片");
+    const description = mealContext.trim();
+    if (!selectedFile && !description) {
+      setError("请上传餐食图片或填写餐食描述");
       return;
     }
 
     setLoading(true);
     setError("");
     const form = new FormData();
-    form.append("image", selectedFile);
+    if (selectedFile) form.append("image", selectedFile);
     form.append("dateKey", dateKey);
-    form.append("userDescription", mealContext);
+    form.append("userDescription", description);
 
     const response = await fetch("/api/meals/analyze", { method: "POST", body: form });
     const data = await response.json().catch(() => ({}));
@@ -444,7 +445,7 @@ function TipsCard() {
         </div>
       </div>
       <div className="space-y-3 text-sm">
-        <SummaryRow label="餐食识别" value="图片 + 文本" />
+        <SummaryRow label="餐食识别" value="图片 / 纯文本" />
         <SummaryRow label="消耗来源" value="Oura 总消耗" />
         <SummaryRow label="训练数据" value="ICU 参考" />
         <SummaryRow label="统计周期" value="本周 / 4 周" />
@@ -461,10 +462,10 @@ function ClassificationCard() {
       </div>
       <p className="text-sm font-medium text-fuchsia-600">Analysis Flow</p>
       <h3 className="mt-1 text-xl font-semibold">餐食先生成草稿</h3>
-      <p className="mt-3 text-sm leading-6 text-slate-500">图片和补充说明一起发送。你确认热量后，才会计入摄入、缺口、本周和月度统计。</p>
+      <p className="mt-3 text-sm leading-6 text-slate-500">支持图片加说明，也支持只写文字描述。你确认热量后，才会计入摄入、缺口、本周和月度统计。</p>
       <div className="mt-5 grid gap-2 text-sm text-slate-600">
-        <div className="rounded-lg bg-slate-50 px-3 py-2">1. 上传图片</div>
-        <div className="rounded-lg bg-slate-50 px-3 py-2">2. 填写重量/做法/店铺</div>
+        <div className="rounded-lg bg-slate-50 px-3 py-2">1. 上传图片或填写描述</div>
+        <div className="rounded-lg bg-slate-50 px-3 py-2">2. 补充重量/做法/店铺</div>
         <div className="rounded-lg bg-slate-50 px-3 py-2">3. 确认 kcal 后入账</div>
       </div>
     </section>
@@ -494,12 +495,14 @@ function UploadPanel({
   onContext: (value: string) => void;
   onAnalyze: () => void;
 }) {
+  const canAnalyze = Boolean(selectedFile || mealContext.trim());
+
   return (
     <div className="panel p-4 sm:p-5">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-fuchsia-600">Meal Vision</p>
-          <h3 className="text-lg font-semibold">上传餐食图片</h3>
+          <h3 className="text-lg font-semibold">上传图片或文字描述</h3>
         </div>
         <Camera className="text-slate-400" size={22} />
       </div>
@@ -522,7 +525,7 @@ function UploadPanel({
       >
         {loading ? <CloudCog size={52} className="animate-pulse" /> : <Upload size={58} />}
         <span className="text-3xl font-semibold">{loading ? "分析中" : "上传图片"}</span>
-        <span className="text-sm text-fuchsia-500">先选图，再填写重量、做法或店铺</span>
+        <span className="text-sm text-fuchsia-500">可选图，也可直接填写文字描述</span>
       </button>
 
       {previewUrl ? (
@@ -543,12 +546,12 @@ function UploadPanel({
           onChange={(event) => onContext(event.target.value)}
           rows={4}
           className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-100"
-          placeholder="例如：米饭约 180g；鸡胸肉空气炸锅少油；麦当劳板烧鸡腿堡一份；海底捞番茄锅里捞出的牛肉约 120g"
+          placeholder="例如：红薯 200g，通过空气炸锅烤制；米饭约 180g；麦当劳板烧鸡腿堡一份；海底捞番茄锅里捞出的牛肉约 120g"
         />
       </label>
       <button
         onClick={onAnalyze}
-        disabled={loading || !selectedFile}
+        disabled={loading || !canAnalyze}
         className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-600 px-5 py-4 text-base font-semibold text-white shadow-sm shadow-fuchsia-600/20 transition hover:bg-fuchsia-700 disabled:cursor-not-allowed disabled:bg-slate-300"
       >
         {loading ? <CloudCog size={19} className="animate-pulse" /> : <Send size={19} />}
@@ -665,7 +668,7 @@ function EmptyDraftCard() {
         <LineChart size={22} />
       </div>
       <h3 className="text-lg font-semibold">等待餐食分析</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-500">上传图片并填写说明后，模型估算会先生成草稿。确认热量后，才会计入今日摄入和缺口。</p>
+      <p className="mt-2 text-sm leading-6 text-slate-500">上传图片或填写文字描述后，模型估算会先生成草稿。确认热量后，才会计入今日摄入和缺口。</p>
     </div>
   );
 }

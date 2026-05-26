@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prepareMealImage, toDataUrl } from "@/lib/image";
 import { uploadImage } from "@/lib/blob";
-import { analyzeMealImage, normalizeMealText } from "@/lib/openai";
+import { analyzeMealImage, analyzeMealText, normalizeMealText } from "@/lib/openai";
 import { prisma } from "@/lib/prisma";
 import { requireApiUser, unauthorized } from "@/lib/auth";
 import { isDateKey, todayKey } from "@/lib/date";
@@ -18,21 +18,28 @@ export async function POST(request: NextRequest) {
   const userDescription = String(form.get("userDescription") || "").trim().slice(0, 1000);
 
   if (!isDateKey(date)) return NextResponse.json({ error: "日期格式不正确" }, { status: 400 });
-  if (!(file instanceof File)) return NextResponse.json({ error: "请选择餐食图片" }, { status: 400 });
+  if (!(file instanceof File) && !userDescription) {
+    return NextResponse.json({ error: "请上传餐食图片或填写餐食描述" }, { status: 400 });
+  }
 
   try {
-    const prepared = await prepareMealImage(file);
+    const imageFile = file instanceof File ? file : null;
+    const prepared = imageFile ? await prepareMealImage(imageFile) : null;
     const stamp = `${date}/${Date.now()}`;
-    const [imageUrl, compressedImageUrl] = await Promise.all([
-      uploadImage(`meals/original/${stamp}.jpg`, prepared.original, file.type || "image/jpeg"),
-      uploadImage(`meals/model/${stamp}.jpg`, prepared.compressed, prepared.contentType)
-    ]);
+    const [imageUrl, compressedImageUrl] = prepared
+      ? await Promise.all([
+          uploadImage(`meals/original/${stamp}.jpg`, prepared.original, imageFile?.type || "image/jpeg"),
+          uploadImage(`meals/model/${stamp}.jpg`, prepared.compressed, prepared.contentType)
+        ])
+      : [null, null];
 
     let analysis;
     try {
-      analysis = await analyzeMealImage(toDataUrl(prepared.compressed, prepared.contentType), userDescription);
+      analysis = prepared
+        ? await analyzeMealImage(toDataUrl(prepared.compressed, prepared.contentType), userDescription)
+        : await analyzeMealText(userDescription);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "图片分析失败";
+      const message = error instanceof Error ? error.message : "餐食分析失败";
       const entry = await prisma.mealEntry.create({
         data: {
           dateKey: date,
@@ -40,8 +47,8 @@ export async function POST(request: NextRequest) {
           imageUrl,
           compressedImageUrl,
           userDescription: userDescription || null,
-          originalBytes: prepared.originalBytes,
-          compressedBytes: prepared.compressedBytes,
+          originalBytes: prepared?.originalBytes,
+          compressedBytes: prepared?.compressedBytes,
           uncertainty: message,
           notes: "模型分析失败，可手动填写热量后确认。"
         },
@@ -57,8 +64,8 @@ export async function POST(request: NextRequest) {
         imageUrl,
         compressedImageUrl,
         userDescription: userDescription || null,
-        originalBytes: prepared.originalBytes,
-        compressedBytes: prepared.compressedBytes,
+        originalBytes: prepared?.originalBytes,
+        compressedBytes: prepared?.compressedBytes,
         modelKcal: analysis.total_kcal,
         finalKcal: analysis.total_kcal,
         confidence: analysis.confidence ?? null,
@@ -78,11 +85,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       entry,
-      compression: {
-        originalBytes: prepared.originalBytes,
-        compressedBytes: prepared.compressedBytes,
-        savedPercent: Math.max(0, Math.round((1 - prepared.compressedBytes / prepared.originalBytes) * 100))
-      }
+      compression: prepared
+        ? {
+            originalBytes: prepared.originalBytes,
+            compressedBytes: prepared.compressedBytes,
+            savedPercent: Math.max(0, Math.round((1 - prepared.compressedBytes / prepared.originalBytes) * 100))
+          }
+        : null
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "上传失败";

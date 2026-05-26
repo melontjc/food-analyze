@@ -84,16 +84,17 @@ export default function DashboardClient({ initialDate }: { initialDate: string }
   }, [dateKey]);
 
   async function analyze() {
-    if (!selectedFile) {
-      setError("请先选择餐食图片");
+    const description = mealContext.trim();
+    if (!selectedFile && !description) {
+      setError("请上传餐食图片或填写餐食描述");
       return;
     }
     setLoading(true);
     setError("");
     const form = new FormData();
-    form.append("image", selectedFile);
+    if (selectedFile) form.append("image", selectedFile);
     form.append("dateKey", dateKey);
-    form.append("userDescription", mealContext);
+    form.append("userDescription", description);
     const response = await fetch("/api/meals/analyze", { method: "POST", body: form });
     const data = await response.json().catch(() => ({}));
     setLoading(false);
@@ -220,7 +221,7 @@ export default function DashboardClient({ initialDate }: { initialDate: string }
             <span className="text-3xl font-semibold">{loading ? "分析中" : "上传图片"}</span>
             <span className="flex items-center gap-2 text-sm opacity-90">
               <Upload size={16} />
-              先选图，再填写说明
+              可选图，也可直接填写文字描述
             </span>
           </button>
 
@@ -242,13 +243,13 @@ export default function DashboardClient({ initialDate }: { initialDate: string }
               onChange={(event) => setMealContext(event.target.value)}
               rows={3}
               className="w-full resize-none rounded-md border border-stone-300 bg-white px-3 py-3 text-sm outline-none focus:border-emerald-600"
-              placeholder="例如：麦当劳板烧鸡腿堡一份；米饭约 180g；鸡胸肉空气炸锅少油；海底捞番茄锅里捞出的牛肉约 120g"
+              placeholder="例如：红薯 200g，通过空气炸锅烤制；麦当劳板烧鸡腿堡一份；米饭约 180g；鸡胸肉空气炸锅少油"
             />
           </label>
           <p className="mt-2 text-xs text-stone-500">有重量、烹饪手法、连锁店、套餐规格时，写在这里会明显提高估算准确度。</p>
           <button
             onClick={analyze}
-            disabled={loading || !selectedFile}
+            disabled={loading || (!selectedFile && !mealContext.trim())}
             className="mt-4 flex w-full items-center justify-center gap-2 rounded-md bg-stone-900 px-5 py-4 text-base font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
           >
             {loading ? <CloudCog size={19} className="animate-pulse" /> : <Send size={19} />}
