@@ -332,13 +332,13 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     await loadPresets();
   }
 
-  async function usePreset(preset: MealPreset, items: Array<{ id: string; grams: number | null }>, saveAsDefault: boolean) {
+  async function usePreset(preset: MealPreset, items: Array<{ id: string; grams: number | null }>) {
     setPresetAddingId(preset.id);
     setError("");
     const response = await fetch(`/api/meal-presets/${preset.id}/use`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dateKey, items, saveAsDefault })
+      body: JSON.stringify({ dateKey, items })
     });
     const data = await response.json().catch(() => ({}));
     setPresetAddingId(null);
@@ -860,7 +860,7 @@ function DraftCard({
             {compression == null ? "" : ` · 图片缩小约 ${compression}%`}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <input value={kcal} onChange={(event) => onKcal(event.target.value)} className="h-10 w-28 rounded-lg border border-slate-200 px-3 text-right font-semibold outline-none focus:border-fuchsia-500" inputMode="numeric" />
           <button onClick={onConfirm} className="flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 font-semibold text-white">
             <Check size={17} />
@@ -974,14 +974,13 @@ function QuickPresetsCard({
 }: {
   presets: MealPreset[];
   addingId: string | null;
-  onUse: (preset: MealPreset, items: Array<{ id: string; grams: number | null }>, saveAsDefault: boolean) => void;
+  onUse: (preset: MealPreset, items: Array<{ id: string; grams: number | null }>) => void;
   onDelete: (preset: MealPreset) => void;
   onReload: () => Promise<void>;
   onError: (message: string) => void;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [grams, setGrams] = useState<Record<string, string>>({});
-  const [saveAsDefault, setSaveAsDefault] = useState<Record<string, boolean>>({});
   const [editableItems, setEditableItems] = useState<Record<string, MealPresetItem[]>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -1041,10 +1040,11 @@ function QuickPresetsCard({
     }));
   }
 
-  function bindNutritionSource(item: MealPresetItem, source: NutritionSource): Partial<MealPresetItem> {
+  function bindNutritionSource(item: MealPresetItem, source: NutritionSource, gramsValue = item.defaultGrams == null ? "" : String(item.defaultGrams)): Partial<MealPresetItem> {
+    const itemGrams = gramsValue ? Number(gramsValue) : null;
     return {
       name: source.name,
-      kcal: item.defaultGrams == null ? item.kcal : Math.round((source.kcalPer100g * item.defaultGrams) / 100),
+      kcal: itemGrams == null ? item.kcal : Math.round((source.kcalPer100g * itemGrams) / 100),
       calculationSource: "nutrition_label",
       nutritionSourceId: source.id,
       nutritionSource: source
@@ -1061,15 +1061,19 @@ function QuickPresetsCard({
       body: JSON.stringify({
         name: preset.name,
         description: preset.description,
-        items: items.map(({ name, portion, defaultGrams, kcal, confidence, calculationSource, nutritionSourceId }) => ({
-          name,
-          portion,
-          defaultGrams,
-          kcal,
-          confidence,
-          calculationSource,
-          nutritionSourceId
-        }))
+        items: items.map((item) => {
+          const gramsValue = currentGrams(item);
+          const storedGrams = gramsValue ? Number(gramsValue) : item.defaultGrams;
+          return {
+            name: item.name,
+            portion: item.portion,
+            defaultGrams: storedGrams,
+            kcal: item.nutritionSource && storedGrams != null ? Math.round((item.nutritionSource.kcalPer100g * storedGrams) / 100) : item.kcal,
+            confidence: item.confidence,
+            calculationSource: item.calculationSource,
+            nutritionSourceId: item.nutritionSourceId
+          };
+        })
       })
     });
     const data = await response.json().catch(() => ({}));
@@ -1227,7 +1231,7 @@ function QuickPresetsCard({
           <p className="text-sm font-medium text-fuchsia-600">Quick Meals</p>
           <h3 className="text-lg font-semibold">常用餐食</h3>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="rounded-full bg-fuchsia-50 px-2.5 py-1 text-xs font-medium text-fuchsia-700">{presets.length} 个模板</span>
           <button onClick={() => setLibraryCreating((value) => !value)} className="flex h-9 items-center gap-1.5 rounded-lg border border-fuchsia-100 bg-white px-3 text-xs font-semibold text-fuchsia-700">
             {libraryCreating ? <X size={15} /> : <Plus size={15} />}
@@ -1269,7 +1273,7 @@ function QuickPresetsCard({
               <input value={newPreset.name} onChange={(event) => setNewPreset({ ...newPreset, name: event.target.value })} className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold outline-none focus:border-fuchsia-400" />
               <div className="mt-2 space-y-2">
                 {newPreset.items.map((item, index) => (
-                  <PresetItemEditor key={item.id} item={item} nutritionSources={nutritionSources} onChange={(patch) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...patch } : current)) })} onSelectSource={(source) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...bindNutritionSource(current, source) } : current)) })} onDelete={() => setNewPreset({ ...newPreset, items: newPreset.items.filter((_, itemIndex) => itemIndex !== index) })} />
+                  <PresetItemEditor key={item.id} item={item} nutritionSources={nutritionSources} showGrams onChange={(patch) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...patch } : current)) })} onSelectSource={(source) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...bindNutritionSource(current, source) } : current)) })} onDelete={() => setNewPreset({ ...newPreset, items: newPreset.items.filter((_, itemIndex) => itemIndex !== index) })} />
                 ))}
               </div>
               <button onClick={saveNewPreset} disabled={savingId === "new"} className="mt-3 flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-60">
@@ -1306,11 +1310,11 @@ function QuickPresetsCard({
                   <div className="mt-3 space-y-3 border-t border-slate-200 pt-3">
                     <div>
                       <p className="text-xs font-semibold text-slate-700">逐项调整</p>
-                      <p className="mt-1 text-xs leading-5 text-slate-400">默认克数用于长期模板；本次计入克数只影响今天。上传成分表后，系统会按每 100g 热量精确换算。</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-400">从个人营养库选择食物，或使用自定义名称。填写本次计入克数后，系统会按每 100g 热量精确换算。</p>
                     </div>
                     {editing.map((item, index) => (
                       <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-3">
-                        <PresetItemEditor item={item} nutritionSources={nutritionSources} onChange={(patch) => updateEditableItem(preset.id, index, patch)} onSelectSource={(source) => updateEditableItem(preset.id, index, bindNutritionSource(item, source))} onDelete={() => setEditableItems((current) => ({ ...current, [preset.id]: editing.filter((_, itemIndex) => itemIndex !== index) }))} />
+                        <PresetItemEditor item={item} nutritionSources={nutritionSources} onChange={(patch) => updateEditableItem(preset.id, index, patch)} onSelectSource={(source) => updateEditableItem(preset.id, index, bindNutritionSource(item, source, currentGrams(item)))} onDelete={() => setEditableItems((current) => ({ ...current, [preset.id]: editing.filter((_, itemIndex) => itemIndex !== index) }))} />
                         <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-[minmax(0,240px)_auto] sm:items-end">
                           <label className="block min-w-0">
                             <span className="mb-1 block text-xs font-medium text-slate-500">本次计入克数</span>
@@ -1335,10 +1339,6 @@ function QuickPresetsCard({
                         <Save size={14} /> {savingId === preset.id ? "保存中" : "保存模板"}
                       </button>
                     </div>
-                    <label className="flex items-center gap-2 text-xs text-slate-500">
-                      <input type="checkbox" checked={saveAsDefault[preset.id] || false} onChange={(event) => setSaveAsDefault((current) => ({ ...current, [preset.id]: event.target.checked }))} />
-                      本次修改克数同时保存为以后默认值
-                    </label>
                   </div>
                 ) : null}
                 <div className="mt-3 flex gap-2">
@@ -1347,7 +1347,7 @@ function QuickPresetsCard({
                     {expanded ? "收起" : "调整克数"}
                   </button>
                   <button
-                    onClick={() => onUse(preset, configuredItems(preset), saveAsDefault[preset.id] || false)}
+                    onClick={() => onUse(preset, configuredItems(preset))}
                     disabled={addingId === preset.id}
                     className="flex h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
                   >
@@ -1390,39 +1390,42 @@ function GramsSelect({ value, onChange, label }: { value: string; onChange: (val
 function PresetItemEditor({
   item,
   nutritionSources,
+  showGrams,
   onChange,
   onSelectSource,
   onDelete
 }: {
   item: MealPresetItem;
   nutritionSources: NutritionSource[];
+  showGrams?: boolean;
   onChange: (patch: Partial<MealPresetItem>) => void;
   onSelectSource: (source: NutritionSource) => void;
   onDelete: () => void;
 }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,220px)_minmax(0,180px)_40px] sm:items-end">
+    <div className={`grid gap-3 ${showGrams ? "sm:grid-cols-[minmax(0,1fr)_minmax(0,180px)_40px]" : "sm:grid-cols-[minmax(0,1fr)_40px]"} sm:items-end`}>
       <label className="block min-w-0">
-        <span className="mb-1 block text-xs font-medium text-slate-500">食物名称</span>
-        <input value={item.name} onChange={(event) => onChange({ name: event.target.value })} className="h-10 w-full min-w-0 rounded-lg border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-fuchsia-400" aria-label="食物名称" />
-      </label>
-      <label className="block min-w-0">
-        <span className="mb-1 block text-xs font-medium text-slate-500">个人营养库</span>
+        <span className="mb-1 block text-xs font-medium text-slate-500">选择食物</span>
         <select
-          value={item.nutritionSourceId || ""}
+          value={item.nutritionSourceId || "custom"}
           onChange={(event) => {
             const source = nutritionSources.find((candidate) => candidate.id === event.target.value);
-            if (source) onSelectSource(source);
+            if (source) {
+              onSelectSource(source);
+            } else {
+              onChange({ nutritionSourceId: null, nutritionSource: null, calculationSource: "ai_estimate" });
+            }
           }}
           className="h-10 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-fuchsia-400"
-          aria-label={`${item.name} 个人营养库`}
+          aria-label={`${item.name} 选择食物`}
         >
-          <option value="">未绑定</option>
+          <option value="custom">自定义食物</option>
           {nutritionSources.map((source) => <option key={source.id} value={source.id}>{source.name} · {source.kcalPer100g} kcal/100g</option>)}
         </select>
+        {!item.nutritionSourceId ? <input value={item.name} onChange={(event) => onChange({ name: event.target.value })} placeholder="填写自定义食物名称" className="mt-2 h-10 w-full min-w-0 rounded-lg border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-fuchsia-400" aria-label="自定义食物名称" /> : null}
       </label>
-      <label className="block min-w-0">
-        <span className="mb-1 block text-xs font-medium text-slate-500">默认克数</span>
+      {showGrams ? <label className="block min-w-0">
+        <span className="mb-1 block text-xs font-medium text-slate-500">计入克数</span>
         <GramsSelect
           value={item.defaultGrams == null ? "" : String(item.defaultGrams)}
           onChange={(value) => {
@@ -1432,9 +1435,9 @@ function PresetItemEditor({
               kcal: item.nutritionSource && defaultGrams != null ? Math.round((item.nutritionSource.kcalPer100g * defaultGrams) / 100) : item.kcal
             });
           }}
-          label={`${item.name} 默认克数`}
+          label={`${item.name} 计入克数`}
         />
-      </label>
+      </label> : null}
       <button onClick={onDelete} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-red-100 hover:bg-red-50 hover:text-red-600" aria-label={`删除 ${item.name}`}><Trash2 size={15} /></button>
     </div>
   );
