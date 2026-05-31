@@ -789,6 +789,7 @@ function MealThumbnail({ url, label, compact }: { url: string | null; label: str
 }
 
 function ComboTrendChart({ days }: { days: DashboardDay[] }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const width = 720;
   const height = 260;
   const padding = { top: 18, right: 26, bottom: 42, left: 44 };
@@ -833,6 +834,8 @@ function ComboTrendChart({ days }: { days: DashboardDay[] }) {
                 chartHeight={chartH}
                 width={width}
                 lines={[day.dateKey, `摄入 ${Math.round(day.intakeKcal || 0)} kcal`, `缺口 ${day.deficitKcal == null ? "未统计" : `${Math.round(day.deficitKcal)} kcal`}`]}
+                active={activeIndex === index}
+                onActivate={() => setActiveIndex((current) => (current === index ? null : index))}
               />
               <text x={x(index)} y={height - 18} textAnchor="middle" className="fill-slate-500 text-[12px]">
                 {day.dateKey.slice(5)}
@@ -855,6 +858,7 @@ function ComboTrendChart({ days }: { days: DashboardDay[] }) {
 }
 
 function WeightLineChart({ days }: { days: DashboardDay[] }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const width = 720;
   const height = 260;
   const padding = { top: 22, right: 26, bottom: 42, left: 48 };
@@ -887,7 +891,16 @@ function WeightLineChart({ days }: { days: DashboardDay[] }) {
         {days.map((day, index) => (
           <g key={day.dateKey} className="group">
             {day.weightKg == null ? <circle cx={x(index)} cy={padding.top + chartH} r="3" fill="#cbd5e1" /> : <circle cx={x(index)} cy={y(day.weightKg)} r="5" fill="#2563eb" />}
-            <HoverBand x={x(index)} bandWidth={bandW} chartTop={padding.top} chartHeight={chartH} width={width} lines={[day.dateKey, `体重 ${day.weightKg == null ? "未录入" : `${day.weightKg.toFixed(1)} kg`}`]} />
+            <HoverBand
+              x={x(index)}
+              bandWidth={bandW}
+              chartTop={padding.top}
+              chartHeight={chartH}
+              width={width}
+              lines={[day.dateKey, `体重 ${day.weightKg == null ? "未录入" : `${day.weightKg.toFixed(1)} kg`}`]}
+              active={activeIndex === index}
+              onActivate={() => setActiveIndex((current) => (current === index ? null : index))}
+            />
             <text x={x(index)} y={height - 18} textAnchor="middle" className="fill-slate-500 text-[12px]">
               {day.dateKey.slice(5)}
             </text>
@@ -899,6 +912,7 @@ function WeightLineChart({ days }: { days: DashboardDay[] }) {
 }
 
 function FourWeekChart({ weeks }: { weeks: WeekSummary[] }) {
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const width = 720;
   const height = 260;
   const padding = { top: 22, right: 30, bottom: 42, left: 48 };
@@ -954,6 +968,8 @@ function FourWeekChart({ weeks }: { weeks: WeekSummary[] }) {
                   `缺口 ${Math.round(week.deficitKcal || 0)} kcal`,
                   `体重 ${week.latestWeightKg == null ? "未录入" : `${week.latestWeightKg.toFixed(1)} kg`}`
                 ]}
+                active={activeIndex === index}
+                onActivate={() => setActiveIndex((current) => (current === index ? null : index))}
               />
               <text x={x(index)} y={height - 18} textAnchor="middle" className="fill-slate-500 text-[12px]">
                 {week.label}
@@ -981,7 +997,9 @@ function HoverBand({
   chartTop,
   chartHeight,
   width,
-  lines
+  lines,
+  active,
+  onActivate
 }: {
   x: number;
   bandWidth: number;
@@ -989,13 +1007,32 @@ function HoverBand({
   chartHeight: number;
   width: number;
   lines: string[];
+  active: boolean;
+  onActivate: () => void;
 }) {
   const tooltipX = Math.min(width - 178, Math.max(54, x - 84));
   const textX = tooltipX + 12;
   return (
     <>
-      <rect x={x - bandWidth / 2} y={chartTop} width={bandWidth} height={chartHeight} fill="transparent" />
-      <g className="opacity-0 transition-opacity group-hover:opacity-100">
+      <rect
+        x={x - bandWidth / 2}
+        y={chartTop}
+        width={bandWidth}
+        height={chartHeight}
+        fill="transparent"
+        className="cursor-pointer"
+        role="button"
+        tabIndex={0}
+        aria-label={lines.join("，")}
+        onClick={onActivate}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onActivate();
+          }
+        }}
+      />
+      <g className={`${active ? "opacity-100" : "opacity-0"} pointer-events-none transition-opacity group-hover:opacity-100 group-focus-within:opacity-100`}>
         <line x1={x} x2={x} y1={chartTop} y2={chartTop + chartHeight} stroke="#64748b" strokeDasharray="4 4" />
         <rect x={tooltipX} y={chartTop + 8} width="168" height={lines.length > 2 ? 72 : 54} rx="7" fill="#0f172a" opacity="0.94" />
         {lines.map((line, index) => (
