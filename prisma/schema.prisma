@@ -55,9 +55,34 @@ model MealItem {
   mealEntry   MealEntry @relation(fields: [mealEntryId], references: [id], onDelete: Cascade)
 }
 
+model MealPreset {
+  id                String           @id @default(cuid())
+  name              String
+  imageUrl          String?
+  description       String?
+  baseKcal          Int
+  sourceMealEntryId String?          @unique
+  usageCount        Int              @default(0)
+  lastUsedAt        DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  items             MealPresetItem[]
+}
+
+model MealPresetItem {
+  id         String     @id @default(cuid())
+  presetId   String
+  name       String
+  portion    String?
+  kcal       Int
+  confidence Float?
+  createdAt  DateTime   @default(now())
+  preset     MealPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
+}
+
 model DailyBurn {
-  id                    String   @id @default(cuid())
-  dateKey               String   @unique
+  id                    String    @id @default(cuid())
+  dateKey               String    @unique
   ouraRestingKcal       Int?
   ouraActiveKcal        Int?
   ouraTotalKcal         Int?
@@ -65,8 +90,8 @@ model DailyBurn {
   totalBurnKcal         Int?
   sourceStatus          String?
   syncedAt              DateTime?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 }
 
 model WeightEntry {
@@ -79,26 +104,26 @@ model WeightEntry {
 }
 
 model TrainingActivity {
-  id         String   @id @default(cuid())
-  intervalsId String  @unique
-  dateKey    String
-  name       String
-  type       String?
+  id          String    @id @default(cuid())
+  intervalsId String    @unique
+  dateKey     String
+  name        String
+  type        String?
   durationSec Int?
-  calories   Int?
-  startedAt  DateTime?
+  calories    Int?
+  startedAt   DateTime?
   raw         String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([dateKey])
 }
 
 model SyncRun {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   source    String
   status    String
   message   String?
-  startedAt DateTime @default(now())
+  startedAt DateTime  @default(now())
   endedAt   DateTime?
 }

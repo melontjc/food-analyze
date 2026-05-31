@@ -5,16 +5,20 @@ import Link from "next/link";
 import {
   Activity,
   BarChart3,
+  BookmarkPlus,
   Camera,
   Check,
   CloudCog,
   Flame,
   Gauge,
   LineChart,
+  Plus,
   RefreshCw,
   Save,
   Send,
   Settings,
+  Star,
+  Trash2,
   TrendingDown,
   Upload,
   Utensils,
@@ -22,6 +26,16 @@ import {
 } from "lucide-react";
 
 type MealItem = { id: string; name: string; portion: string | null; kcal: number; confidence: number | null };
+type MealPresetItem = { id: string; name: string; portion: string | null; kcal: number; confidence: number | null };
+type MealPreset = {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+  description: string | null;
+  baseKcal: number;
+  usageCount: number;
+  items: MealPresetItem[];
+};
 type MealEntry = {
   id: string;
   dateKey: string;
@@ -76,6 +90,7 @@ type Dashboard = {
 export default function DashboardTailAdminClient({ initialDate }: { initialDate: string }) {
   const [dateKey, setDateKey] = useState(initialDate);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
+  const [presets, setPresets] = useState<MealPreset[]>([]);
   const [draft, setDraft] = useState<MealEntry | null>(null);
   const [kcal, setKcal] = useState("");
   const [mealContext, setMealContext] = useState("");
@@ -85,6 +100,9 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [presetSavingId, setPresetSavingId] = useState<string | null>(null);
+  const [presetAddingId, setPresetAddingId] = useState<string | null>(null);
+  const [presetMultipliers, setPresetMultipliers] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -95,6 +113,13 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     setDashboard(data);
     setWeightInput(data.today.weightKg == null ? "" : String(data.today.weightKg));
   }, [dateKey]);
+
+  const loadPresets = useCallback(async () => {
+    const response = await fetch("/api/meal-presets");
+    if (!response.ok) return;
+    const data = (await response.json()) as { presets: MealPreset[] };
+    setPresets(data.presets);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -112,6 +137,20 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
       cancelled = true;
     };
   }, [dateKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/meal-presets")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { presets: MealPreset[] } | null) => {
+        if (!cancelled && data) setPresets(data.presets);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -216,6 +255,56 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     await load();
   }
 
+  async function savePreset(meal: MealEntry) {
+    setPresetSavingId(meal.id);
+    setError("");
+    const response = await fetch("/api/meal-presets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mealEntryId: meal.id })
+    });
+    const data = await response.json().catch(() => ({}));
+    setPresetSavingId(null);
+    if (!response.ok) {
+      setError(data.error || "保存常用餐食失败");
+      return;
+    }
+    await loadPresets();
+  }
+
+  async function usePreset(preset: MealPreset) {
+    const multiplier = Number(presetMultipliers[preset.id] || "1");
+    if (!Number.isFinite(multiplier) || multiplier < 0.1 || multiplier > 10) {
+      setError("份数应在 0.1 至 10 之间");
+      return;
+    }
+
+    setPresetAddingId(preset.id);
+    setError("");
+    const response = await fetch(`/api/meal-presets/${preset.id}/use`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dateKey, multiplier })
+    });
+    const data = await response.json().catch(() => ({}));
+    setPresetAddingId(null);
+    if (!response.ok) {
+      setError(data.error || "快速计入失败");
+      return;
+    }
+    await Promise.all([load(), loadPresets()]);
+  }
+
+  async function deletePreset(preset: MealPreset) {
+    if (!window.confirm(`删除常用餐食“${preset.name}”？`)) return;
+    const response = await fetch(`/api/meal-presets/${preset.id}`, { method: "DELETE" });
+    if (!response.ok) {
+      setError("删除常用餐食失败");
+      return;
+    }
+    await loadPresets();
+  }
+
   const compression = useMemo(() => {
     if (!draft?.originalBytes || !draft.compressedBytes) return null;
     return Math.max(0, Math.round((1 - draft.compressedBytes / draft.originalBytes) * 100));
@@ -232,6 +321,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
           <nav className="mt-8 space-y-2 text-sm">
             <SideItem icon={<Gauge size={18} />} label="Dashboard" active />
             <SideItem icon={<Camera size={18} />} label="餐食识别" />
+            <SideItem icon={<Star size={18} />} label="常用餐食" />
             <SideItem icon={<BarChart3 size={18} />} label="周/月统计" />
             <SideItem icon={<Weight size={18} />} label="体重追踪" />
             <SideItem icon={<Activity size={18} />} label="数据同步" />
@@ -298,6 +388,15 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
                 )}
               </section>
 
+              <QuickPresetsCard
+                presets={presets}
+                multipliers={presetMultipliers}
+                addingId={presetAddingId}
+                onMultiplier={(presetId, value) => setPresetMultipliers((current) => ({ ...current, [presetId]: value }))}
+                onUse={usePreset}
+                onDelete={deletePreset}
+              />
+
               <section className="grid gap-5 2xl:grid-cols-[1.1fr_0.9fr]">
                 <TrendCard dashboard={dashboard} />
                 <WeightChartCard days={dashboard?.days || []} />
@@ -310,7 +409,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
               <DailySummaryCard dashboard={dashboard} dateKey={dateKey} />
               <WeightInputCard dateKey={dateKey} value={weightInput} saving={weightSaving} onChange={setWeightInput} onSave={saveWeight} />
               <TipsCard />
-              <TodayMeals meals={dashboard?.today.meals || []} syncedAt={dashboard?.today.syncedAt || null} />
+              <TodayMeals meals={dashboard?.today.meals || []} syncedAt={dashboard?.today.syncedAt || null} savingId={presetSavingId} onSavePreset={savePreset} />
             </aside>
           </div>
         </section>
@@ -737,7 +836,96 @@ function MonthlyStatsCard({ dashboard }: { dashboard: Dashboard | null }) {
   );
 }
 
-function TodayMeals({ meals, syncedAt }: { meals: MealEntry[]; syncedAt: string | null }) {
+function QuickPresetsCard({
+  presets,
+  multipliers,
+  addingId,
+  onMultiplier,
+  onUse,
+  onDelete
+}: {
+  presets: MealPreset[];
+  multipliers: Record<string, string>;
+  addingId: string | null;
+  onMultiplier: (presetId: string, value: string) => void;
+  onUse: (preset: MealPreset) => void;
+  onDelete: (preset: MealPreset) => void;
+}) {
+  return (
+    <section className="panel p-4 sm:p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-fuchsia-600">Quick Meals</p>
+          <h3 className="text-lg font-semibold">常用餐食</h3>
+        </div>
+        <span className="rounded-full bg-fuchsia-50 px-2.5 py-1 text-xs font-medium text-fuchsia-700">{presets.length} 个模板</span>
+      </div>
+      {presets.length ? (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {presets.map((preset) => {
+            const multiplier = multipliers[preset.id] || "1";
+            const adjustedKcal = Math.round(preset.baseKcal * (Number(multiplier) || 0));
+            return (
+              <div key={preset.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                <div className="flex gap-3">
+                  <MealThumbnail url={preset.imageUrl} label={preset.name} compact />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-slate-950">{preset.name}</p>
+                        <p className="mt-1 text-sm text-slate-500">{adjustedKcal} kcal</p>
+                      </div>
+                      <button onClick={() => onDelete(preset)} className="text-slate-400 transition hover:text-red-600" aria-label={`删除 ${preset.name}`}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    <p className="mt-1 truncate text-xs text-slate-400">{preset.items.map((item) => item.portion || item.name).join(" · ") || "已确认餐食"}</p>
+                  </div>
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2">
+                    <span className="text-xs text-slate-500">份数</span>
+                    <input
+                      value={multiplier}
+                      onChange={(event) => onMultiplier(preset.id, event.target.value)}
+                      inputMode="decimal"
+                      className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none"
+                      aria-label={`${preset.name} 份数`}
+                    />
+                  </label>
+                  <button
+                    onClick={() => onUse(preset)}
+                    disabled={addingId === preset.id}
+                    className="flex h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+                  >
+                    <Plus size={16} />
+                    {addingId === preset.id ? "计入中" : "计入"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
+          还没有常用餐食。确认餐食后，在今日记录中点击“存为常用”。
+        </div>
+      )}
+    </section>
+  );
+}
+
+function TodayMeals({
+  meals,
+  syncedAt,
+  savingId,
+  onSavePreset
+}: {
+  meals: MealEntry[];
+  syncedAt: string | null;
+  savingId: string | null;
+  onSavePreset: (meal: MealEntry) => void;
+}) {
   return (
     <section className="panel p-4 sm:p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -759,6 +947,14 @@ function TodayMeals({ meals, syncedAt }: { meals: MealEntry[]; syncedAt: string 
                 </div>
                 {meal.userDescription ? <p className="mt-1 text-sm text-slate-500">{meal.userDescription}</p> : null}
                 <p className="mt-1 text-sm text-slate-500">{meal.notes || meal.uncertainty || "已确认"}</p>
+                <button
+                  onClick={() => onSavePreset(meal)}
+                  disabled={savingId === meal.id}
+                  className="mt-2 inline-flex h-8 items-center gap-1.5 rounded-lg border border-fuchsia-100 bg-white px-2.5 text-xs font-semibold text-fuchsia-700 transition hover:bg-fuchsia-50 disabled:opacity-60"
+                >
+                  <BookmarkPlus size={14} />
+                  {savingId === meal.id ? "保存中" : "存为常用"}
+                </button>
               </div>
             </div>
           ))
