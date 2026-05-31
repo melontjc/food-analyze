@@ -93,7 +93,7 @@ type WeekSummary = {
   label: string;
   intakeKcal: number;
   deficitKcal: number;
-  latestWeightKg: number | null;
+  averageWeightKg: number | null;
 };
 type Dashboard = {
   dateKey: string;
@@ -424,7 +424,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
                 <MissionCard dashboard={dashboard} />
               </div>
 
-              <section id="meal-vision" className="grid scroll-mt-4 gap-5 2xl:grid-cols-[1.05fr_0.95fr]">
+              <section id="meal-vision" className={`grid scroll-mt-4 gap-5 ${draft ? "2xl:grid-cols-[1.05fr_0.95fr]" : ""}`}>
                 <UploadPanel
                   inputRef={inputRef}
                   loading={loading}
@@ -437,11 +437,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
                   onContext={setMealContext}
                   onAnalyze={analyze}
                 />
-                {draft ? (
-                  <DraftCard draft={draft} kcal={kcal} compression={compression} onKcal={setKcal} onConfirm={confirmDraft} />
-                ) : (
-                  <ClassificationCard />
-                )}
+                {draft ? <DraftCard draft={draft} kcal={kcal} compression={compression} onKcal={setKcal} onConfirm={confirmDraft} /> : null}
               </section>
 
               <div id="quick-meals" className="scroll-mt-4">
@@ -591,7 +587,7 @@ function MissionCard({ dashboard }: { dashboard: Dashboard | null }) {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[330px_minmax(0,1fr)]">
-        <div className="flex items-center justify-center">
+        <div className="flex flex-col items-center justify-center">
           <div className="relative h-72 w-72">
             <svg viewBox="0 0 220 220" className="h-full w-full -rotate-90">
               <circle cx="110" cy="110" r="92" fill="none" stroke="#f3e8ff" strokeWidth="8" />
@@ -610,15 +606,20 @@ function MissionCard({ dashboard }: { dashboard: Dashboard | null }) {
               </p>
             </div>
           </div>
+          <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-slate-500">
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-violet-500" />摄入</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-orange-400" />今日缺口</span>
+            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" />本周缺口</span>
+          </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <MissionMetric dot="bg-blue-500" label="摄入热量" value={kcalText(today?.intakeKcal)} />
-          <MissionMetric dot="bg-orange-400" label="Oura 总消耗" value={totalBurnText(today)} />
-          <MissionMetric dot="bg-emerald-500" label="今日缺口" value={deficitText(today)} />
-          <MissionMetric dot="bg-violet-500" label="ICU 训练参考" value={kcalText(today?.intervalsTrainingKcal)} />
-          <MissionMetric dot="bg-rose-400" label="本周累计缺口" value={kcalText(dashboard?.weekDeficitKcal)} />
+          <MissionMetric dot="bg-violet-500" label="摄入热量" value={kcalText(today?.intakeKcal)} />
+          <MissionMetric dot="bg-orange-400" label="今日缺口" value={deficitText(today)} />
+          <MissionMetric dot="bg-emerald-500" label="本周累计缺口" value={kcalText(dashboard?.weekDeficitKcal)} />
+          <MissionMetric dot="bg-blue-500" label="Oura 总消耗" value={totalBurnText(today)} />
           <MissionMetric dot="bg-slate-300" label="本周预计下降" value={`${dashboard?.predictedWeightLossJin.toFixed(2) || "0.00"} 斤`} />
+          <MissionMetric dot="bg-slate-300" label="ICU 训练参考" value={kcalText(today?.intervalsTrainingKcal)} />
         </div>
       </div>
     </section>
@@ -686,24 +687,6 @@ function TipsCard() {
         <SummaryRow label="消耗来源" value="Oura 总消耗" />
         <SummaryRow label="训练数据" value="ICU 参考" />
         <SummaryRow label="统计周期" value="本周 / 4 周" />
-      </div>
-    </section>
-  );
-}
-
-function ClassificationCard() {
-  return (
-    <section className="panel flex min-h-full flex-col justify-center p-5">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-fuchsia-50 text-fuchsia-600">
-        <LineChart size={24} />
-      </div>
-      <p className="text-sm font-medium text-fuchsia-600">Analysis Flow</p>
-      <h3 className="mt-1 text-xl font-semibold">餐食先生成草稿</h3>
-      <p className="mt-3 text-sm leading-6 text-slate-500">支持图片加说明，也支持只写文字描述。你确认热量后，才会计入摄入、缺口、本周和月度统计。</p>
-      <div className="mt-5 grid gap-2 text-sm text-slate-600">
-        <div className="rounded-lg bg-slate-50 px-3 py-2">1. 上传图片或填写描述</div>
-        <div className="rounded-lg bg-slate-50 px-3 py-2">2. 补充重量/做法/店铺</div>
-        <div className="rounded-lg bg-slate-50 px-3 py-2">3. 确认 kcal 后入账</div>
       </div>
     </section>
   );
@@ -785,6 +768,7 @@ function UploadPanel({
           placeholder="例如：红薯 200g，通过空气炸锅烤制；米饭约 180g；麦当劳板烧鸡腿堡一份；海底捞番茄锅里捞出的牛肉约 120g"
         />
       </label>
+      <p className="mt-2 text-xs leading-5 text-slate-500">支持图片加说明，也支持只写文字描述。补充重量、做法或店铺可提高准确度；分析后会先生成草稿，确认 kcal 才计入统计。</p>
       <button
         onClick={onAnalyze}
         disabled={loading || !canAnalyze}
@@ -960,14 +944,14 @@ function MonthlyStatsCard({ dashboard }: { dashboard: Dashboard | null }) {
         </div>
         <div className="flex items-center gap-4 text-xs text-slate-500">
           <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-indigo-500" />每周缺口</span>
-          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-rose-500" />体重追踪</span>
+          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-rose-500" />周均体重</span>
         </div>
       </div>
       <FourWeekChart weeks={weeks} />
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <SmallStat label="4 周累计缺口" value={kcalText(dashboard?.fourWeekDeficitKcal)} />
         <SmallStat label="4 周预计下降" value={`${dashboard?.predictedFourWeekWeightLossJin.toFixed(2) || "0.00"} 斤`} />
-        <SmallStat label="最新体重" value={latestWeeklyWeightText(weeks)} />
+        <SmallStat label="本周平均体重" value={latestWeeklyAverageWeightText(weeks)} />
       </div>
     </div>
   );
@@ -1567,7 +1551,7 @@ function FourWeekChart({ weeks }: { weeks: WeekSummary[] }) {
   const chartW = width - padding.left - padding.right;
   const chartH = height - padding.top - padding.bottom;
   const deficits = weeks.map((week) => week.deficitKcal || 0);
-  const weights = weeks.map((week) => week.latestWeightKg).filter((value): value is number => value != null);
+  const weights = weeks.map((week) => week.averageWeightKg).filter((value): value is number => value != null);
   const maxValue = niceCeil(Math.max(500, ...deficits.map((value) => Math.max(0, value))));
   const minValue = Math.min(0, ...deficits);
   const minAxis = minValue < 0 ? -niceCeil(Math.abs(minValue)) : 0;
@@ -1580,7 +1564,7 @@ function FourWeekChart({ weeks }: { weeks: WeekSummary[] }) {
   const bandW = chartW / Math.max(1, weeks.length);
   const barWidth = Math.max(30, Math.min(70, bandW - 28));
   const weightPoints = weeks
-    .map((week, index) => (week.latestWeightKg == null ? null : `${x(index)},${yWeight(week.latestWeightKg)}`))
+    .map((week, index) => (week.averageWeightKg == null ? null : `${x(index)},${yWeight(week.averageWeightKg)}`))
     .filter(Boolean)
     .join(" ");
   const ticks = minAxis < 0 ? [minAxis, 0, maxValue] : [0, Math.round(maxValue / 2), maxValue];
@@ -1614,7 +1598,7 @@ function FourWeekChart({ weeks }: { weeks: WeekSummary[] }) {
                 lines={[
                   week.label,
                   `缺口 ${Math.round(week.deficitKcal || 0)} kcal`,
-                  `体重 ${week.latestWeightKg == null ? "未录入" : `${week.latestWeightKg.toFixed(1)} kg`}`
+                  `周均体重 ${week.averageWeightKg == null ? "未录入" : `${week.averageWeightKg.toFixed(1)} kg`}`
                 ]}
                 active={activeIndex === index}
                 onActivate={() => setActiveIndex((current) => (current === index ? null : index))}
@@ -1627,10 +1611,10 @@ function FourWeekChart({ weeks }: { weeks: WeekSummary[] }) {
         })}
         {weightPoints ? <polyline points={weightPoints} fill="none" stroke="#f43f5e" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" /> : null}
         {weeks.map((week, index) =>
-          week.latestWeightKg == null ? null : (
+          week.averageWeightKg == null ? null : (
             <g key={`${week.startDateKey}-weight`}>
-              <circle cx={x(index)} cy={yWeight(week.latestWeightKg)} r="4.5" fill="#f43f5e" />
-              <circle cx={x(index)} cy={yWeight(week.latestWeightKg)} r="2" fill="#ffffff" />
+              <circle cx={x(index)} cy={yWeight(week.averageWeightKg)} r="4.5" fill="#f43f5e" />
+              <circle cx={x(index)} cy={yWeight(week.averageWeightKg)} r="2" fill="#ffffff" />
             </g>
           )
         )}
@@ -1734,9 +1718,9 @@ function latestWeightText(days: DashboardDay[]) {
   return latest?.weightKg == null ? "未录入" : `${latest.weightKg.toFixed(1)} kg`;
 }
 
-function latestWeeklyWeightText(weeks: WeekSummary[]) {
-  const latest = [...weeks].reverse().find((week) => week.latestWeightKg != null);
-  return latest?.latestWeightKg == null ? "未录入" : `${latest.latestWeightKg.toFixed(1)} kg`;
+function latestWeeklyAverageWeightText(weeks: WeekSummary[]) {
+  const latest = [...weeks].reverse().find((week) => week.averageWeightKg != null);
+  return latest?.averageWeightKg == null ? "未录入" : `${latest.averageWeightKg.toFixed(1)} kg`;
 }
 
 function totalBurnText(today: Dashboard["today"] | undefined) {

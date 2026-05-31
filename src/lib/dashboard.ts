@@ -46,13 +46,14 @@ export async function getDashboard(dateKey: string) {
   const weekDeficitKcal = days.reduce((total, day) => total + (day.deficitKcal || 0), 0);
   const weeks = weekBuckets.map((week) => {
     const weekDays = week.dates.map((key) => allDays.find((day) => day.dateKey === key) || buildDay(key));
+    const weekWeights = weekDays.map((day) => day.weightKg).filter((weight): weight is number => weight != null);
     return {
       startDateKey: week.startDateKey,
       endDateKey: week.endDateKey,
       label: week.label,
       intakeKcal: weekDays.reduce((total, day) => total + day.intakeKcal, 0),
       deficitKcal: weekDays.reduce((total, day) => total + (day.deficitKcal || 0), 0),
-      latestWeightKg: [...weekDays].reverse().find((day) => day.weightKg != null)?.weightKg ?? null
+      averageWeightKg: weekWeights.length ? weekWeights.reduce((total, weight) => total + weight, 0) / weekWeights.length : null
     };
   });
   const fourWeekDeficitKcal = weeks.reduce((total, week) => total + week.deficitKcal, 0);
