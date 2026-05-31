@@ -991,6 +991,25 @@ function QuickPresetsCard({
   const [newPreset, setNewPreset] = useState<MealPreset | null>(null);
   const [nutritionReview, setNutritionReview] = useState<{ presetId: string; itemIndex: number; source: NutritionSourceDraft } | null>(null);
   const [nutritionUploading, setNutritionUploading] = useState("");
+  const [nutritionSources, setNutritionSources] = useState<NutritionSource[]>([]);
+  const [libraryCreating, setLibraryCreating] = useState(false);
+  const [libraryDraft, setLibraryDraft] = useState<NutritionSourceDraft>(emptyNutritionSource());
+  const [libraryAnalyzing, setLibraryAnalyzing] = useState(false);
+  const [librarySaving, setLibrarySaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/nutrition-sources")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { sources: NutritionSource[] } | null) => {
+        if (!cancelled && data) setNutritionSources(data.sources);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function togglePreset(preset: MealPreset) {
     const nextId = expandedId === preset.id ? null : preset.id;
@@ -1020,6 +1039,16 @@ function QuickPresetsCard({
       ...current,
       [presetId]: (current[presetId] || []).map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item))
     }));
+  }
+
+  function bindNutritionSource(item: MealPresetItem, source: NutritionSource): Partial<MealPresetItem> {
+    return {
+      name: source.name,
+      kcal: item.defaultGrams == null ? item.kcal : Math.round((source.kcalPer100g * item.defaultGrams) / 100),
+      calculationSource: "nutrition_label",
+      nutritionSourceId: source.id,
+      nutritionSource: source
+    };
   }
 
   async function savePresetItems(preset: MealPreset) {
@@ -1109,8 +1138,36 @@ function QuickPresetsCard({
     if (!bindResponse.ok) return onError("成分表已保存，但绑定模板失败");
     const boundData = await bindResponse.json();
     setEditableItems((current) => ({ ...current, [preset.id]: boundData.preset.items }));
+    setNutritionSources((current) => [data.source, ...current]);
     setNutritionReview(null);
     await onReload();
+  }
+
+  async function analyzeLibraryNutrition(file: File) {
+    setLibraryAnalyzing(true);
+    const form = new FormData();
+    form.append("image", file);
+    form.append("name", libraryDraft.name);
+    const response = await fetch("/api/nutrition-sources/analyze", { method: "POST", body: form });
+    const data = await response.json().catch(() => ({}));
+    setLibraryAnalyzing(false);
+    if (!response.ok) return onError(data.error || "成分表识别失败");
+    setLibraryDraft(data.source);
+  }
+
+  async function saveLibraryNutrition() {
+    setLibrarySaving(true);
+    const response = await fetch("/api/nutrition-sources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(libraryDraft)
+    });
+    const data = await response.json().catch(() => ({}));
+    setLibrarySaving(false);
+    if (!response.ok) return onError(data.error || "食物保存失败，请检查名称和每 100g 热量");
+    setNutritionSources((current) => [data.source, ...current]);
+    setLibraryDraft(emptyNutritionSource());
+    setLibraryCreating(false);
   }
 
   async function analyzeNewPreset() {
@@ -1172,12 +1229,26 @@ function QuickPresetsCard({
         </div>
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-fuchsia-50 px-2.5 py-1 text-xs font-medium text-fuchsia-700">{presets.length} 个模板</span>
+          <button onClick={() => setLibraryCreating((value) => !value)} className="flex h-9 items-center gap-1.5 rounded-lg border border-fuchsia-100 bg-white px-3 text-xs font-semibold text-fuchsia-700">
+            {libraryCreating ? <X size={15} /> : <Plus size={15} />}
+            {libraryCreating ? "取消添加" : "添加食物"}
+          </button>
           <button onClick={() => setCreating((value) => !value)} className="flex h-9 items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-xs font-semibold text-white">
             {creating ? <X size={15} /> : <Plus size={15} />}
             {creating ? "取消" : "新建模板"}
           </button>
         </div>
       </div>
+      {libraryCreating ? (
+        <NutritionLibraryEditor
+          source={libraryDraft}
+          analyzing={libraryAnalyzing}
+          saving={librarySaving}
+          onChange={setLibraryDraft}
+          onAnalyze={analyzeLibraryNutrition}
+          onSave={saveLibraryNutrition}
+        />
+      ) : null}
       {creating ? (
         <div className="mb-4 rounded-lg border border-fuchsia-100 bg-fuchsia-50/50 p-3">
           <p className="font-semibold">新建常用餐食模板</p>
@@ -1198,7 +1269,7 @@ function QuickPresetsCard({
               <input value={newPreset.name} onChange={(event) => setNewPreset({ ...newPreset, name: event.target.value })} className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold outline-none focus:border-fuchsia-400" />
               <div className="mt-2 space-y-2">
                 {newPreset.items.map((item, index) => (
-                  <PresetItemEditor key={item.id} item={item} onChange={(patch) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...patch } : current)) })} onDelete={() => setNewPreset({ ...newPreset, items: newPreset.items.filter((_, itemIndex) => itemIndex !== index) })} />
+                  <PresetItemEditor key={item.id} item={item} nutritionSources={nutritionSources} onChange={(patch) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...patch } : current)) })} onSelectSource={(source) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...bindNutritionSource(current, source) } : current)) })} onDelete={() => setNewPreset({ ...newPreset, items: newPreset.items.filter((_, itemIndex) => itemIndex !== index) })} />
                 ))}
               </div>
               <button onClick={saveNewPreset} disabled={savingId === "new"} className="mt-3 flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-60">
@@ -1239,7 +1310,7 @@ function QuickPresetsCard({
                     </div>
                     {editing.map((item, index) => (
                       <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-3">
-                        <PresetItemEditor item={item} onChange={(patch) => updateEditableItem(preset.id, index, patch)} onDelete={() => setEditableItems((current) => ({ ...current, [preset.id]: editing.filter((_, itemIndex) => itemIndex !== index) }))} />
+                        <PresetItemEditor item={item} nutritionSources={nutritionSources} onChange={(patch) => updateEditableItem(preset.id, index, patch)} onSelectSource={(source) => updateEditableItem(preset.id, index, bindNutritionSource(item, source))} onDelete={() => setEditableItems((current) => ({ ...current, [preset.id]: editing.filter((_, itemIndex) => itemIndex !== index) }))} />
                         <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-[minmax(0,240px)_auto] sm:items-end">
                           <label className="block min-w-0">
                             <span className="mb-1 block text-xs font-medium text-slate-500">本次计入克数</span>
@@ -1316,18 +1387,100 @@ function GramsSelect({ value, onChange, label }: { value: string; onChange: (val
   );
 }
 
-function PresetItemEditor({ item, onChange, onDelete }: { item: MealPresetItem; onChange: (patch: Partial<MealPresetItem>) => void; onDelete: () => void }) {
+function PresetItemEditor({
+  item,
+  nutritionSources,
+  onChange,
+  onSelectSource,
+  onDelete
+}: {
+  item: MealPresetItem;
+  nutritionSources: NutritionSource[];
+  onChange: (patch: Partial<MealPresetItem>) => void;
+  onSelectSource: (source: NutritionSource) => void;
+  onDelete: () => void;
+}) {
   return (
-    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,240px)_40px] sm:items-end">
+    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,220px)_minmax(0,180px)_40px] sm:items-end">
       <label className="block min-w-0">
         <span className="mb-1 block text-xs font-medium text-slate-500">食物名称</span>
         <input value={item.name} onChange={(event) => onChange({ name: event.target.value })} className="h-10 w-full min-w-0 rounded-lg border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-fuchsia-400" aria-label="食物名称" />
       </label>
       <label className="block min-w-0">
+        <span className="mb-1 block text-xs font-medium text-slate-500">个人营养库</span>
+        <select
+          value={item.nutritionSourceId || ""}
+          onChange={(event) => {
+            const source = nutritionSources.find((candidate) => candidate.id === event.target.value);
+            if (source) onSelectSource(source);
+          }}
+          className="h-10 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-fuchsia-400"
+          aria-label={`${item.name} 个人营养库`}
+        >
+          <option value="">未绑定</option>
+          {nutritionSources.map((source) => <option key={source.id} value={source.id}>{source.name} · {source.kcalPer100g} kcal/100g</option>)}
+        </select>
+      </label>
+      <label className="block min-w-0">
         <span className="mb-1 block text-xs font-medium text-slate-500">默认克数</span>
-        <GramsSelect value={item.defaultGrams == null ? "" : String(item.defaultGrams)} onChange={(value) => onChange({ defaultGrams: value ? Number(value) : null })} label={`${item.name} 默认克数`} />
+        <GramsSelect
+          value={item.defaultGrams == null ? "" : String(item.defaultGrams)}
+          onChange={(value) => {
+            const defaultGrams = value ? Number(value) : null;
+            onChange({
+              defaultGrams,
+              kcal: item.nutritionSource && defaultGrams != null ? Math.round((item.nutritionSource.kcalPer100g * defaultGrams) / 100) : item.kcal
+            });
+          }}
+          label={`${item.name} 默认克数`}
+        />
       </label>
       <button onClick={onDelete} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-red-100 hover:bg-red-50 hover:text-red-600" aria-label={`删除 ${item.name}`}><Trash2 size={15} /></button>
+    </div>
+  );
+}
+
+function NutritionLibraryEditor({
+  source,
+  analyzing,
+  saving,
+  onChange,
+  onAnalyze,
+  onSave
+}: {
+  source: NutritionSourceDraft;
+  analyzing: boolean;
+  saving: boolean;
+  onChange: (source: NutritionSourceDraft) => void;
+  onAnalyze: (file: File) => void;
+  onSave: () => void;
+}) {
+  const numberValue = (value: string) => value ? Number(value) : null;
+  return (
+    <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+      <div>
+        <p className="font-semibold text-slate-950">添加食物到个人营养库</p>
+        <p className="mt-1 text-xs leading-5 text-slate-500">可手动填写每 100g 热量，也可以上传包装成分表自动识别。保存后即可在模板食物下拉框中复用。</p>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-6">
+        <input value={source.name} onChange={(event) => onChange({ ...source, name: event.target.value })} placeholder="食物名称" className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm sm:col-span-2" />
+        <input value={source.kcalPer100g || ""} onChange={(event) => onChange({ ...source, kcalPer100g: Number(event.target.value) })} inputMode="decimal" placeholder="kcal / 100g" className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm" />
+        <input value={source.proteinPer100g ?? ""} onChange={(event) => onChange({ ...source, proteinPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="蛋白质 g" className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm" />
+        <input value={source.fatPer100g ?? ""} onChange={(event) => onChange({ ...source, fatPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="脂肪 g" className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm" />
+        <input value={source.carbsPer100g ?? ""} onChange={(event) => onChange({ ...source, carbsPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="碳水 g" className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm" />
+      </div>
+      <textarea value={source.notes || ""} onChange={(event) => onChange({ ...source, notes: event.target.value })} placeholder="可选备注，例如品牌、口味或烹饪方式" rows={2} className="mt-2 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" />
+      <div className="mt-3 flex flex-wrap gap-2">
+        <label className="flex min-h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-700">
+          <FileText size={15} />
+          {analyzing ? "识别中" : source.imageUrl ? "替换成分表" : "上传成分表"}
+          <input type="file" accept="image/*" className="hidden" disabled={analyzing} onChange={(event) => event.target.files?.[0] && onAnalyze(event.target.files[0])} />
+        </label>
+        <button onClick={onSave} disabled={saving || analyzing} className="flex min-h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-60">
+          <Save size={15} />
+          {saving ? "保存中" : "保存食物"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1356,6 +1509,10 @@ function NutritionReviewCard({ review, onChange, onCancel, onSave }: { review: {
 
 function emptyPresetItem(presetId: string): MealPresetItem {
   return { id: `${presetId}-${Date.now()}`, name: "新食物", portion: null, defaultGrams: null, kcal: 0, confidence: null, calculationSource: null, nutritionSourceId: null, nutritionSource: null };
+}
+
+function emptyNutritionSource(): NutritionSourceDraft {
+  return { name: "", imageUrl: null, kcalPer100g: 0, proteinPer100g: null, fatPer100g: null, carbsPer100g: null, confidence: null, notes: null };
 }
 
 function TodayMeals({
