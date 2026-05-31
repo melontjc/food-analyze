@@ -631,7 +631,6 @@ function UploadPanel({
         ref={inputRef}
         type="file"
         accept="image/*"
-        capture="environment"
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0];
