@@ -1079,7 +1079,7 @@ function QuickPresetsCard({
             <label className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600">
               <Upload size={15} />
               {createFile ? createFile.name : "可选套餐图片"}
-              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => setCreateFile(event.target.files?.[0] || null)} />
+              <input type="file" accept="image/*" className="hidden" onChange={(event) => setCreateFile(event.target.files?.[0] || null)} />
             </label>
             <button onClick={analyzeNewPreset} disabled={analyzing} className="flex h-9 items-center gap-1.5 rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white disabled:opacity-60">
               <Send size={15} />
@@ -1141,7 +1141,7 @@ function QuickPresetsCard({
                           <label className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-600 sm:w-fit">
                             <FileText size={14} />
                             {nutritionUploading === `${preset.id}-${index}` ? "识别中" : item.nutritionSource ? "替换成分表" : "上传成分表"}
-                            <input type="file" accept="image/*" capture="environment" className="hidden" disabled={Boolean(nutritionUploading)} onChange={(event) => event.target.files?.[0] && analyzeNutrition(event.target.files[0], preset, index)} />
+                            <input type="file" accept="image/*" className="hidden" disabled={Boolean(nutritionUploading)} onChange={(event) => event.target.files?.[0] && analyzeNutrition(event.target.files[0], preset, index)} />
                           </label>
                         </div>
                         <p className="mt-1 text-xs text-slate-400">
