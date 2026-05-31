@@ -1109,7 +1109,7 @@ function QuickPresetsCard({
             const expanded = expandedId === preset.id;
             const editing = editableItems[preset.id] || preset.items;
             return (
-              <div key={preset.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+              <div key={preset.id} className={`rounded-lg border border-slate-100 bg-slate-50 p-3 ${expanded ? "md:col-span-2 xl:col-span-3" : ""}`}>
                 <div className="flex gap-3">
                   <MealThumbnail url={preset.imageUrl} label={preset.name} compact />
                   <div className="min-w-0 flex-1">
@@ -1126,13 +1126,20 @@ function QuickPresetsCard({
                   </div>
                 </div>
                 {expanded ? (
-                  <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+                  <div className="mt-3 space-y-3 border-t border-slate-200 pt-3">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-700">逐项调整</p>
+                      <p className="mt-1 text-xs leading-5 text-slate-400">默认克数用于长期模板；本次计入克数只影响今天。上传成分表后，系统会按每 100g 热量精确换算。</p>
+                    </div>
                     {editing.map((item, index) => (
-                      <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-2">
+                      <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-3">
                         <PresetItemEditor item={item} onChange={(patch) => updateEditableItem(preset.id, index, patch)} onDelete={() => setEditableItems((current) => ({ ...current, [preset.id]: editing.filter((_, itemIndex) => itemIndex !== index) }))} />
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <GramsSelect value={currentGrams(item)} onChange={(value) => setCurrentGrams(item.id, value)} label={`${item.name} 本次克数`} />
-                          <label className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-2 text-xs font-semibold text-slate-600">
+                        <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-[minmax(0,240px)_auto] sm:items-end">
+                          <label className="block min-w-0">
+                            <span className="mb-1 block text-xs font-medium text-slate-500">本次计入克数</span>
+                            <GramsSelect value={currentGrams(item)} onChange={(value) => setCurrentGrams(item.id, value)} label={`${item.name} 本次克数`} />
+                          </label>
+                          <label className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-600 sm:w-fit">
                             <FileText size={14} />
                             {nutritionUploading === `${preset.id}-${index}` ? "识别中" : item.nutritionSource ? "替换成分表" : "上传成分表"}
                             <input type="file" accept="image/*" capture="environment" className="hidden" disabled={Boolean(nutritionUploading)} onChange={(event) => event.target.files?.[0] && analyzeNutrition(event.target.files[0], preset, index)} />
@@ -1192,23 +1199,29 @@ const GRAMS_OPTIONS = ["", "25", "50", "75", "100", "125", "150", "200", "250", 
 function GramsSelect({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
   const [custom, setCustom] = useState(!GRAMS_OPTIONS.includes(value) && Boolean(value));
   return (
-    <div className="flex min-w-0 flex-1 gap-1">
-      <select value={custom ? "custom" : value} onChange={(event) => event.target.value === "custom" ? setCustom(true) : (setCustom(false), onChange(event.target.value))} className="h-9 min-w-24 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold outline-none" aria-label={label}>
+    <div className={`grid min-w-0 gap-2 ${custom ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "grid-cols-1"}`}>
+      <select value={custom ? "custom" : value} onChange={(event) => event.target.value === "custom" ? setCustom(true) : (setCustom(false), onChange(event.target.value))} className="h-10 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold outline-none" aria-label={label}>
         <option value="">克数未填</option>
         {GRAMS_OPTIONS.slice(1, -1).map((grams) => <option key={grams} value={grams}>{grams}g</option>)}
         <option value="custom">自定义</option>
       </select>
-      {custom ? <input value={value} onChange={(event) => onChange(event.target.value)} inputMode="decimal" placeholder="克数" className="h-9 min-w-0 flex-1 rounded-lg border border-slate-200 px-2 text-xs outline-none" aria-label={`${label}自定义`} /> : null}
+      {custom ? <input value={value} onChange={(event) => onChange(event.target.value)} inputMode="decimal" placeholder="克数" className="h-10 min-w-0 rounded-lg border border-slate-200 px-2 text-xs outline-none" aria-label={`${label}自定义`} /> : null}
     </div>
   );
 }
 
 function PresetItemEditor({ item, onChange, onDelete }: { item: MealPresetItem; onChange: (patch: Partial<MealPresetItem>) => void; onDelete: () => void }) {
   return (
-    <div className="flex items-center gap-2">
-      <input value={item.name} onChange={(event) => onChange({ name: event.target.value })} className="h-8 min-w-0 flex-1 rounded-lg border border-slate-200 px-2 text-xs font-semibold outline-none focus:border-fuchsia-400" aria-label="食物名称" />
-      <GramsSelect value={item.defaultGrams == null ? "" : String(item.defaultGrams)} onChange={(value) => onChange({ defaultGrams: value ? Number(value) : null })} label={`${item.name} 默认克数`} />
-      <button onClick={onDelete} className="text-slate-400 hover:text-red-600" aria-label={`删除 ${item.name}`}><Trash2 size={15} /></button>
+    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,240px)_40px] sm:items-end">
+      <label className="block min-w-0">
+        <span className="mb-1 block text-xs font-medium text-slate-500">食物名称</span>
+        <input value={item.name} onChange={(event) => onChange({ name: event.target.value })} className="h-10 w-full min-w-0 rounded-lg border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-fuchsia-400" aria-label="食物名称" />
+      </label>
+      <label className="block min-w-0">
+        <span className="mb-1 block text-xs font-medium text-slate-500">默认克数</span>
+        <GramsSelect value={item.defaultGrams == null ? "" : String(item.defaultGrams)} onChange={(value) => onChange({ defaultGrams: value ? Number(value) : null })} label={`${item.name} 默认克数`} />
+      </label>
+      <button onClick={onDelete} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-red-100 hover:bg-red-50 hover:text-red-600" aria-label={`删除 ${item.name}`}><Trash2 size={15} /></button>
     </div>
   );
 }
