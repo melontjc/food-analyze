@@ -13,7 +13,9 @@ import {
   FileText,
   Flame,
   Gauge,
+  Home,
   LineChart,
+  MoreHorizontal,
   Plus,
   RefreshCw,
   Save,
@@ -112,6 +114,9 @@ type Dashboard = {
   predictedFourWeekWeightLossJin: number;
 };
 
+type NavigationSection = "dashboard-home" | "meal-vision" | "quick-meals" | "statistics" | "weight-tracking";
+const OBSERVED_SECTIONS: NavigationSection[] = ["dashboard-home", "meal-vision", "quick-meals", "statistics", "weight-tracking"];
+
 export default function DashboardTailAdminClient({ initialDate }: { initialDate: string }) {
   const [dateKey, setDateKey] = useState(initialDate);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
@@ -128,6 +133,8 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   const [presetSavingId, setPresetSavingId] = useState<string | null>(null);
   const [presetAddingId, setPresetAddingId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [activeSection, setActiveSection] = useState<NavigationSection>("dashboard-home");
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -181,6 +188,31 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0];
+        if (visible?.target.id) setActiveSection(visible.target.id as NavigationSection);
+      },
+      { rootMargin: "-18% 0px -62% 0px", threshold: [0, 0.1, 0.35] }
+    );
+
+    OBSERVED_SECTIONS.forEach((section) => {
+      const element = document.getElementById(section);
+      if (element) observer.observe(element);
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
+  const navigateTo = useCallback((section: NavigationSection) => {
+    setMobileMoreOpen(false);
+    setActiveSection(section);
+    document.getElementById(section)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
 
   function chooseFile(file: File) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -333,20 +365,20 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   }, [draft]);
 
   return (
-    <main className="min-h-screen bg-[linear-gradient(135deg,#fff7ed_0%,#f8fafc_44%,#eef2ff_100%)] px-3 py-3 text-slate-900 sm:px-5 sm:py-5">
+    <main className="min-h-screen bg-[linear-gradient(135deg,#fff7ed_0%,#f8fafc_44%,#eef2ff_100%)] px-3 pb-24 pt-3 text-slate-900 sm:px-5 sm:pt-5 lg:pb-5">
       <div className="mx-auto grid min-h-[calc(100vh-40px)] w-full max-w-[1640px] gap-5 rounded-lg border border-white/70 bg-white/55 p-3 shadow-2xl shadow-slate-300/30 backdrop-blur md:p-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="hidden rounded-lg border border-white/70 bg-white/80 p-5 shadow-sm lg:flex lg:flex-col">
+        <aside className="hidden rounded-lg border border-white/70 bg-white/80 p-5 shadow-sm lg:sticky lg:top-5 lg:flex lg:h-[calc(100vh-40px)] lg:flex-col">
           <div className="px-1 py-2">
             <p className="text-3xl font-black tracking-normal text-fuchsia-600">TRACKER</p>
             <p className="mt-1 text-sm font-medium text-slate-500">Food Deficit Studio</p>
           </div>
           <nav className="mt-8 space-y-2 text-sm">
-            <SideItem icon={<Gauge size={18} />} label="Dashboard" active />
-            <SideItem icon={<Camera size={18} />} label="餐食识别" />
-            <SideItem icon={<Star size={18} />} label="常用餐食" />
-            <SideItem icon={<BarChart3 size={18} />} label="周/月统计" />
-            <SideItem icon={<Weight size={18} />} label="体重追踪" />
-            <SideItem icon={<Activity size={18} />} label="数据同步" />
+            <SideItem icon={<Gauge size={18} />} label="Dashboard" active={activeSection === "dashboard-home"} onClick={() => navigateTo("dashboard-home")} />
+            <SideItem icon={<Camera size={18} />} label="餐食识别" active={activeSection === "meal-vision"} onClick={() => navigateTo("meal-vision")} />
+            <SideItem icon={<Star size={18} />} label="常用餐食" active={activeSection === "quick-meals"} onClick={() => navigateTo("quick-meals")} />
+            <SideItem icon={<BarChart3 size={18} />} label="周/月统计" active={activeSection === "statistics"} onClick={() => navigateTo("statistics")} />
+            <SideItem icon={<Weight size={18} />} label="体重追踪" active={activeSection === "weight-tracking"} onClick={() => navigateTo("weight-tracking")} />
+            <SideItem icon={<Activity size={18} />} label="立即同步" onClick={() => void syncNow()} />
             <SideItem icon={<Settings size={18} />} label="设置" href="/settings" />
           </nav>
           <div className="mt-auto rounded-lg border border-fuchsia-100 bg-fuchsia-50 p-4 text-center">
@@ -388,9 +420,11 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div className="space-y-5">
-              <MissionCard dashboard={dashboard} />
+              <div id="dashboard-home" className="scroll-mt-4">
+                <MissionCard dashboard={dashboard} />
+              </div>
 
-              <section className="grid gap-5 2xl:grid-cols-[1.05fr_0.95fr]">
+              <section id="meal-vision" className="grid scroll-mt-4 gap-5 2xl:grid-cols-[1.05fr_0.95fr]">
                 <UploadPanel
                   inputRef={inputRef}
                   loading={loading}
@@ -410,37 +444,53 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
                 )}
               </section>
 
-              <QuickPresetsCard
-                presets={presets}
-                addingId={presetAddingId}
-                onUse={usePreset}
-                onDelete={deletePreset}
-                onReload={loadPresets}
-                onError={setError}
-              />
+              <div id="quick-meals" className="scroll-mt-4">
+                <QuickPresetsCard
+                  presets={presets}
+                  addingId={presetAddingId}
+                  onUse={usePreset}
+                  onDelete={deletePreset}
+                  onReload={loadPresets}
+                  onError={setError}
+                />
+              </div>
 
-              <section className="grid gap-5 2xl:grid-cols-[1.1fr_0.9fr]">
-                <TrendCard dashboard={dashboard} />
-                <WeightChartCard days={dashboard?.days || []} />
-              </section>
-
-              <MonthlyStatsCard dashboard={dashboard} />
+              <div id="statistics" className="scroll-mt-4 space-y-5">
+                <section className="grid gap-5 2xl:grid-cols-[1.1fr_0.9fr]">
+                  <TrendCard dashboard={dashboard} />
+                  <WeightChartCard days={dashboard?.days || []} />
+                </section>
+                <MonthlyStatsCard dashboard={dashboard} />
+              </div>
             </div>
 
             <aside className="space-y-5">
               <DailySummaryCard dashboard={dashboard} dateKey={dateKey} />
-              <WeightInputCard dateKey={dateKey} value={weightInput} saving={weightSaving} onChange={setWeightInput} onSave={saveWeight} />
+              <div id="weight-tracking" className="scroll-mt-4">
+                <WeightInputCard dateKey={dateKey} value={weightInput} saving={weightSaving} onChange={setWeightInput} onSave={saveWeight} />
+              </div>
               <TipsCard />
               <TodayMeals meals={dashboard?.today.meals || []} syncedAt={dashboard?.today.syncedAt || null} savingId={presetSavingId} onSavePreset={savePreset} />
             </aside>
           </div>
         </section>
       </div>
+      <MobileNavigation
+        activeSection={activeSection}
+        moreOpen={mobileMoreOpen}
+        syncing={syncing}
+        onNavigate={navigateTo}
+        onMore={() => setMobileMoreOpen((open) => !open)}
+        onSync={() => {
+          setMobileMoreOpen(false);
+          void syncNow();
+        }}
+      />
     </main>
   );
 }
 
-function SideItem({ icon, label, active, href }: { icon: React.ReactNode; label: string; active?: boolean; href?: string }) {
+function SideItem({ icon, label, active, href, onClick }: { icon: React.ReactNode; label: string; active?: boolean; href?: string; onClick?: () => void }) {
   const content = (
     <>
       {icon}
@@ -453,8 +503,71 @@ function SideItem({ icon, label, active, href }: { icon: React.ReactNode; label:
     <Link href={href} className={className}>
       {content}
     </Link>
+  ) : onClick ? (
+    <button type="button" onClick={onClick} className={`${className} w-full text-left`}>
+      {content}
+    </button>
   ) : (
     <div className={className}>{content}</div>
+  );
+}
+
+function MobileNavigation({
+  activeSection,
+  moreOpen,
+  syncing,
+  onNavigate,
+  onMore,
+  onSync
+}: {
+  activeSection: NavigationSection;
+  moreOpen: boolean;
+  syncing: boolean;
+  onNavigate: (section: NavigationSection) => void;
+  onMore: () => void;
+  onSync: () => void;
+}) {
+  return (
+    <>
+      {moreOpen ? (
+        <>
+          <button type="button" onClick={onMore} className="fixed inset-0 z-30 bg-slate-950/20 lg:hidden" aria-label="关闭更多菜单" />
+          <div className="fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-50 rounded-lg border border-slate-200 bg-white p-3 shadow-2xl lg:hidden">
+            <p className="px-2 pb-2 text-xs font-semibold text-slate-400">更多功能</p>
+            <div className="grid gap-1">
+              <button type="button" onClick={() => onNavigate("weight-tracking")} className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                <Weight size={19} className="text-fuchsia-600" />
+                录入体重
+              </button>
+              <button type="button" onClick={onSync} className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                <RefreshCw size={19} className={syncing ? "animate-spin text-fuchsia-600" : "text-fuchsia-600"} />
+                {syncing ? "正在同步" : "立即同步"}
+              </button>
+              <Link href="/settings" className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                <Settings size={19} className="text-fuchsia-600" />
+                数据源设置
+              </Link>
+            </div>
+          </div>
+        </>
+      ) : null}
+      <nav className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-slate-200 bg-white/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-12px_36px_rgba(15,23,42,0.10)] backdrop-blur lg:hidden" aria-label="手机快捷导航">
+        <MobileNavItem icon={<Home size={19} />} label="首页" active={activeSection === "dashboard-home"} onClick={() => onNavigate("dashboard-home")} />
+        <MobileNavItem icon={<Star size={19} />} label="常用" active={activeSection === "quick-meals"} onClick={() => onNavigate("quick-meals")} />
+        <MobileNavItem icon={<Camera size={22} />} label="记一餐" active={activeSection === "meal-vision"} primary onClick={() => onNavigate("meal-vision")} />
+        <MobileNavItem icon={<BarChart3 size={19} />} label="趋势" active={activeSection === "statistics"} onClick={() => onNavigate("statistics")} />
+        <MobileNavItem icon={<MoreHorizontal size={20} />} label="更多" active={moreOpen || activeSection === "weight-tracking"} onClick={onMore} />
+      </nav>
+    </>
+  );
+}
+
+function MobileNavItem({ icon, label, active, primary, onClick }: { icon: React.ReactNode; label: string; active?: boolean; primary?: boolean; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className={`flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-semibold transition ${primary ? "-mt-5 bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-200" : active ? "text-fuchsia-700" : "text-slate-400"}`}>
+      {icon}
+      <span>{label}</span>
+    </button>
   );
 }
 
