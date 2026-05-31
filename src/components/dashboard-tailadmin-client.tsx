@@ -459,19 +459,30 @@ function AppHeader({ activeTab, onNavigate }: { activeTab: AppTab; onNavigate: (
 
 function BottomNavigation({ activeTab, onNavigate }: { activeTab: AppTab; onNavigate: (tab: AppTab) => void }) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto grid w-full max-w-[480px] grid-cols-5 border-t border-white/80 bg-white/95 px-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 shadow-[0_-10px_30px_rgba(124,76,101,0.12)] backdrop-blur" aria-label="应用导航">
-      <BottomNavItem icon={<Home size={20} />} label="首页" active={activeTab === "home"} onClick={() => onNavigate("home")} />
-      <BottomNavItem icon={<Star size={20} />} label="常用" active={activeTab === "quick"} onClick={() => onNavigate("quick")} />
-      <BottomNavItem icon={<Camera size={23} />} label="记一餐" active={activeTab === "capture"} primary onClick={() => onNavigate("capture")} />
-      <BottomNavItem icon={<BarChart3 size={20} />} label="趋势" active={activeTab === "trends"} onClick={() => onNavigate("trends")} />
-      <BottomNavItem icon={<MoreHorizontal size={22} />} label="更多" active={activeTab === "more"} onClick={() => onNavigate("more")} />
+    <nav className="fixed inset-x-0 bottom-0 z-40 mx-auto grid w-full max-w-[480px] grid-cols-5 border-t border-fuchsia-50/90 bg-white/95 px-3 pb-[calc(env(safe-area-inset-bottom)+0.65rem)] pt-3 shadow-[0_-12px_34px_rgba(124,76,101,0.10)] backdrop-blur-xl" aria-label="应用导航">
+      <BottomNavItem icon={<Home size={21} strokeWidth={1.8} />} label="首页" active={activeTab === "home"} onClick={() => onNavigate("home")} />
+      <BottomNavItem icon={<Star size={21} strokeWidth={1.8} />} label="常用" active={activeTab === "quick"} onClick={() => onNavigate("quick")} />
+      <BottomNavItem icon={<Plus size={29} strokeWidth={1.8} />} label="记一餐" active={activeTab === "capture"} primary onClick={() => onNavigate("capture")} />
+      <BottomNavItem icon={<BarChart3 size={21} strokeWidth={1.8} />} label="趋势" active={activeTab === "trends"} onClick={() => onNavigate("trends")} />
+      <BottomNavItem icon={<MoreHorizontal size={23} strokeWidth={1.8} />} label="更多" active={activeTab === "more"} onClick={() => onNavigate("more")} />
     </nav>
   );
 }
 
 function BottomNavItem({ icon, label, active, primary, onClick }: { icon: React.ReactNode; label: string; active?: boolean; primary?: boolean; onClick: () => void }) {
+  if (primary) {
+    return (
+      <button type="button" onClick={onClick} className="group relative flex min-h-12 min-w-0 items-end justify-center outline-none" aria-label={label}>
+        <span className={`absolute -top-9 flex h-16 w-16 items-center justify-center rounded-full text-white ring-[7px] ring-white/95 transition duration-200 group-focus-visible:ring-[9px] group-focus-visible:ring-fuchsia-200/80 ${active ? "bg-fuchsia-700 shadow-[0_14px_26px_rgba(192,38,211,0.34)]" : "bg-fuchsia-600 shadow-[0_12px_24px_rgba(192,38,211,0.26)] hover:bg-fuchsia-700"}`}>
+          {icon}
+        </span>
+        <span className="sr-only">{label}</span>
+      </button>
+    );
+  }
+
   return (
-    <button type="button" onClick={onClick} className={`flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-semibold transition ${primary ? "-mt-6 bg-fuchsia-600 text-white shadow-lg shadow-fuchsia-200" : active ? "text-fuchsia-700" : "text-slate-400"}`}>
+    <button type="button" onClick={onClick} className={`flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 px-1 text-[10px] font-medium outline-none transition duration-200 focus-visible:text-fuchsia-600 ${active ? "text-fuchsia-600" : "text-slate-400 hover:text-slate-600"}`}>
       {icon}
       <span>{label}</span>
     </button>
