@@ -381,7 +381,6 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
             <SideItem icon={<Camera size={18} />} label="餐食识别" active={activeSection === "meal-vision"} onClick={() => navigateTo("meal-vision")} />
             <SideItem icon={<Star size={18} />} label="常用餐食" active={activeSection === "quick-meals"} onClick={() => navigateTo("quick-meals")} />
             <SideItem icon={<BarChart3 size={18} />} label="周/月统计" active={activeSection === "statistics"} onClick={() => navigateTo("statistics")} />
-            <SideItem icon={<Weight size={18} />} label="体重追踪" active={activeSection === "weight-tracking"} onClick={() => navigateTo("weight-tracking")} />
             <SideItem icon={<Settings size={18} />} label="设置" href="/settings" />
           </nav>
           <div className="mt-auto rounded-lg border border-fuchsia-100 bg-fuchsia-50 p-4 text-center">
