@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  Activity,
   BarChart3,
   BookmarkPlus,
   Camera,
@@ -214,6 +213,11 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     document.getElementById(section)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
 
+  const scrollToWeightEntry = useCallback(() => {
+    setMobileMoreOpen(false);
+    document.getElementById("weight-entry")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
   function chooseFile(file: File) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setSelectedFile(file);
@@ -378,7 +382,6 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
             <SideItem icon={<Star size={18} />} label="常用餐食" active={activeSection === "quick-meals"} onClick={() => navigateTo("quick-meals")} />
             <SideItem icon={<BarChart3 size={18} />} label="周/月统计" active={activeSection === "statistics"} onClick={() => navigateTo("statistics")} />
             <SideItem icon={<Weight size={18} />} label="体重追踪" active={activeSection === "weight-tracking"} onClick={() => navigateTo("weight-tracking")} />
-            <SideItem icon={<Activity size={18} />} label="立即同步" onClick={() => void syncNow()} />
             <SideItem icon={<Settings size={18} />} label="设置" href="/settings" />
           </nav>
           <div className="mt-auto rounded-lg border border-fuchsia-100 bg-fuchsia-50 p-4 text-center">
@@ -454,7 +457,9 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
               <div id="statistics" className="scroll-mt-4 space-y-5">
                 <section className="grid gap-5 2xl:grid-cols-[1.1fr_0.9fr]">
                   <TrendCard dashboard={dashboard} />
-                  <WeightChartCard days={dashboard?.days || []} />
+                  <div id="weight-tracking" className="scroll-mt-4">
+                    <WeightChartCard days={dashboard?.days || []} />
+                  </div>
                 </section>
                 <MonthlyStatsCard dashboard={dashboard} />
               </div>
@@ -462,7 +467,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
 
             <aside className="space-y-5">
               <DailySummaryCard dashboard={dashboard} dateKey={dateKey} />
-              <div id="weight-tracking" className="scroll-mt-4">
+              <div id="weight-entry" className="scroll-mt-4">
                 <WeightInputCard dateKey={dateKey} value={weightInput} saving={weightSaving} onChange={setWeightInput} onSave={saveWeight} />
               </div>
               <TipsCard />
@@ -481,6 +486,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
           setMobileMoreOpen(false);
           void syncNow();
         }}
+        onWeightEntry={scrollToWeightEntry}
       />
     </main>
   );
@@ -514,7 +520,8 @@ function MobileNavigation({
   syncing,
   onNavigate,
   onMore,
-  onSync
+  onSync,
+  onWeightEntry
 }: {
   activeSection: NavigationSection;
   moreOpen: boolean;
@@ -522,6 +529,7 @@ function MobileNavigation({
   onNavigate: (section: NavigationSection) => void;
   onMore: () => void;
   onSync: () => void;
+  onWeightEntry: () => void;
 }) {
   return (
     <>
@@ -531,7 +539,7 @@ function MobileNavigation({
           <div className="fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-50 rounded-lg border border-slate-200 bg-white p-3 shadow-2xl lg:hidden">
             <p className="px-2 pb-2 text-xs font-semibold text-slate-400">更多功能</p>
             <div className="grid gap-1">
-              <button type="button" onClick={() => onNavigate("weight-tracking")} className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              <button type="button" onClick={onWeightEntry} className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">
                 <Weight size={19} className="text-fuchsia-600" />
                 录入体重
               </button>
