@@ -25,6 +25,35 @@ const mealAnalysisSchema = z.object({
 
 export type MealAnalysis = z.infer<typeof mealAnalysisSchema>;
 
+const nutritionLabelSchema = z.object({
+  name: z.string().min(1),
+  kcal_per_100g: z.number().positive(),
+  protein_per_100g: z.number().nonnegative().optional().nullable(),
+  fat_per_100g: z.number().nonnegative().optional().nullable(),
+  carbs_per_100g: z.number().nonnegative().optional().nullable(),
+  confidence: z.number().min(0).max(1).optional().nullable(),
+  notes: z.string().optional().nullable()
+});
+
+const presetRecalculationSchema = z.object({
+  items: z.array(
+    z.object({
+      preset_item_id: z.string().min(1),
+      name: z.string().min(1),
+      grams: z.number().positive(),
+      kcal: z.number().int().nonnegative(),
+      confidence: z.number().min(0).max(1).optional().nullable()
+    })
+  ),
+  total_kcal: z.number().int().nonnegative(),
+  confidence: z.number().min(0).max(1).optional().nullable(),
+  uncertainty: z.string().optional().nullable(),
+  notes: z.string().optional().nullable()
+});
+
+export type NutritionLabelAnalysis = z.infer<typeof nutritionLabelSchema>;
+export type PresetRecalculation = z.infer<typeof presetRecalculationSchema>;
+
 export async function analyzeMealImage(imageDataUrl: string, userDescription?: string | null): Promise<MealAnalysis> {
   const description = userDescription?.trim();
   const payload = {
@@ -89,6 +118,71 @@ export async function analyzeMealText(userDescription: string): Promise<MealAnal
   const text = extractResponseText(data);
   const json = parseJson(text);
   return mealAnalysisSchema.parse(json);
+}
+
+export async function analyzeNutritionLabel(imageDataUrl: string, suggestedName?: string | null): Promise<NutritionLabelAnalysis> {
+  const payload = {
+    model: optionalEnv("OPENAI_MODEL") || "gpt-4.1-mini",
+    max_output_tokens: 700,
+    instructions:
+      "你是食品营养标签录入助手。读取图片中的营养成分表，统一换算成每100克数据。能量如果以kJ标示，使用 1 kcal = 4.184 kJ 换算。不要猜测无法读取的值；无法可靠得到每100克热量时直接说明。返回严格 JSON，不要 Markdown。",
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: [
+              "请读取这张食品营养成分表图片，统一输出每100克营养数据。",
+              suggestedName?.trim() ? `食品名称提示：${suggestedName.trim()}` : "食品名称未知，请根据包装识别。",
+              "如果标签按每份显示且图片中有每份克数，请换算为每100克。",
+              "JSON schema: {\"name\":\"string\",\"kcal_per_100g\":number,\"protein_per_100g\":number|null,\"fat_per_100g\":number|null,\"carbs_per_100g\":number|null,\"confidence\":0-1,\"notes\":\"string\"}。"
+            ].join("\n")
+          },
+          { type: "input_image", image_url: imageDataUrl }
+        ]
+      }
+    ]
+  };
+
+  const data = await postOpenAi(payload);
+  return nutritionLabelSchema.parse(parseJson(extractResponseText(data)));
+}
+
+export async function recalculatePresetItems(
+  items: Array<{
+    presetItemId: string;
+    name: string;
+    grams: number;
+    portion?: string | null;
+    kcalPer100g?: number | null;
+    cookingNotes?: string | null;
+  }>
+): Promise<PresetRecalculation> {
+  const payload = {
+    model: optionalEnv("OPENAI_MODEL") || "gpt-4.1-mini",
+    max_output_tokens: 900,
+    instructions:
+      "你是谨慎的餐食热量复核助手。按照用户提供的每种食物克数重新估算热量。有每100克热量时优先精确换算；没有营养表时根据常见食材和烹饪方式保守估算。必须保留输入的 preset_item_id 和 grams，不要增加或删除食物。返回严格 JSON，不要 Markdown。",
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: [
+              "请按以下食物清单重新计算热量：",
+              JSON.stringify(items),
+              "JSON schema: {\"items\":[{\"preset_item_id\":\"string\",\"name\":\"string\",\"grams\":number,\"kcal\":number,\"confidence\":0-1}],\"total_kcal\":number,\"confidence\":0-1,\"uncertainty\":\"string\",\"notes\":\"string\"}。"
+            ].join("\n")
+          }
+        ]
+      }
+    ]
+  };
+
+  const data = await postOpenAi(payload);
+  return presetRecalculationSchema.parse(parseJson(extractResponseText(data)));
 }
 
 async function postOpenAi(payload: unknown) {

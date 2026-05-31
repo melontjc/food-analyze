@@ -45,14 +45,18 @@ model MealEntry {
 }
 
 model MealItem {
-  id          String    @id @default(cuid())
-  mealEntryId String
-  name        String
-  portion     String?
-  kcal        Int
-  confidence  Float?
-  createdAt   DateTime  @default(now())
-  mealEntry   MealEntry @relation(fields: [mealEntryId], references: [id], onDelete: Cascade)
+  id                String           @id @default(cuid())
+  mealEntryId       String
+  name              String
+  portion           String?
+  grams             Float?
+  kcal              Int
+  confidence        Float?
+  calculationSource String?
+  nutritionSourceId String?
+  createdAt         DateTime         @default(now())
+  mealEntry         MealEntry        @relation(fields: [mealEntryId], references: [id], onDelete: Cascade)
+  nutritionSource   NutritionSource? @relation(fields: [nutritionSourceId], references: [id], onDelete: SetNull)
 }
 
 model MealPreset {
@@ -70,14 +74,34 @@ model MealPreset {
 }
 
 model MealPresetItem {
-  id         String     @id @default(cuid())
-  presetId   String
-  name       String
-  portion    String?
-  kcal       Int
-  confidence Float?
-  createdAt  DateTime   @default(now())
-  preset     MealPreset @relation(fields: [presetId], references: [id], onDelete: Cascade)
+  id                String           @id @default(cuid())
+  presetId          String
+  name              String
+  portion           String?
+  defaultGrams      Float?
+  kcal              Int
+  confidence        Float?
+  calculationSource String?
+  nutritionSourceId String?
+  createdAt         DateTime         @default(now())
+  preset            MealPreset       @relation(fields: [presetId], references: [id], onDelete: Cascade)
+  nutritionSource   NutritionSource? @relation(fields: [nutritionSourceId], references: [id], onDelete: SetNull)
+}
+
+model NutritionSource {
+  id              String           @id @default(cuid())
+  name            String
+  imageUrl        String?
+  kcalPer100g     Float
+  proteinPer100g  Float?
+  fatPer100g      Float?
+  carbsPer100g    Float?
+  confidence      Float?
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  mealItems       MealItem[]
+  mealPresetItems MealPresetItem[]
 }
 
 model DailyBurn {

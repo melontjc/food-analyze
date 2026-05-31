@@ -8,7 +8,9 @@ import {
   BookmarkPlus,
   Camera,
   Check,
+  ChevronDown,
   CloudCog,
+  FileText,
   Flame,
   Gauge,
   LineChart,
@@ -22,11 +24,34 @@ import {
   TrendingDown,
   Upload,
   Utensils,
-  Weight
+  Weight,
+  X
 } from "lucide-react";
 
-type MealItem = { id: string; name: string; portion: string | null; kcal: number; confidence: number | null };
-type MealPresetItem = { id: string; name: string; portion: string | null; kcal: number; confidence: number | null };
+type NutritionSource = {
+  id: string;
+  name: string;
+  imageUrl: string | null;
+  kcalPer100g: number;
+  proteinPer100g: number | null;
+  fatPer100g: number | null;
+  carbsPer100g: number | null;
+  confidence: number | null;
+  notes: string | null;
+};
+type NutritionSourceDraft = Omit<NutritionSource, "id">;
+type MealItem = { id: string; name: string; portion: string | null; grams: number | null; kcal: number; confidence: number | null; calculationSource: string | null };
+type MealPresetItem = {
+  id: string;
+  name: string;
+  portion: string | null;
+  defaultGrams: number | null;
+  kcal: number;
+  confidence: number | null;
+  calculationSource: string | null;
+  nutritionSourceId: string | null;
+  nutritionSource: NutritionSource | null;
+};
 type MealPreset = {
   id: string;
   name: string;
@@ -102,7 +127,6 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   const [syncing, setSyncing] = useState(false);
   const [presetSavingId, setPresetSavingId] = useState<string | null>(null);
   const [presetAddingId, setPresetAddingId] = useState<string | null>(null);
-  const [presetMultipliers, setPresetMultipliers] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -272,25 +296,23 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     await loadPresets();
   }
 
-  async function usePreset(preset: MealPreset) {
-    const multiplier = Number(presetMultipliers[preset.id] || "1");
-    if (!Number.isFinite(multiplier) || multiplier < 0.1 || multiplier > 10) {
-      setError("份数应在 0.1 至 10 之间");
-      return;
-    }
-
+  async function usePreset(preset: MealPreset, items: Array<{ id: string; grams: number | null }>, saveAsDefault: boolean) {
     setPresetAddingId(preset.id);
     setError("");
     const response = await fetch(`/api/meal-presets/${preset.id}/use`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ dateKey, multiplier })
+      body: JSON.stringify({ dateKey, items, saveAsDefault })
     });
     const data = await response.json().catch(() => ({}));
     setPresetAddingId(null);
     if (!response.ok) {
       setError(data.error || "快速计入失败");
       return;
+    }
+    if (!data.confirmed && data.entry) {
+      setDraft(data.entry);
+      setKcal(String(data.entry.finalKcal || data.entry.modelKcal || ""));
     }
     await Promise.all([load(), loadPresets()]);
   }
@@ -390,11 +412,11 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
 
               <QuickPresetsCard
                 presets={presets}
-                multipliers={presetMultipliers}
                 addingId={presetAddingId}
-                onMultiplier={(presetId, value) => setPresetMultipliers((current) => ({ ...current, [presetId]: value }))}
                 onUse={usePreset}
                 onDelete={deletePreset}
+                onReload={loadPresets}
+                onError={setError}
               />
 
               <section className="grid gap-5 2xl:grid-cols-[1.1fr_0.9fr]">
@@ -838,19 +860,203 @@ function MonthlyStatsCard({ dashboard }: { dashboard: Dashboard | null }) {
 
 function QuickPresetsCard({
   presets,
-  multipliers,
   addingId,
-  onMultiplier,
   onUse,
-  onDelete
+  onDelete,
+  onReload,
+  onError
 }: {
   presets: MealPreset[];
-  multipliers: Record<string, string>;
   addingId: string | null;
-  onMultiplier: (presetId: string, value: string) => void;
-  onUse: (preset: MealPreset) => void;
+  onUse: (preset: MealPreset, items: Array<{ id: string; grams: number | null }>, saveAsDefault: boolean) => void;
   onDelete: (preset: MealPreset) => void;
+  onReload: () => Promise<void>;
+  onError: (message: string) => void;
 }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [grams, setGrams] = useState<Record<string, string>>({});
+  const [saveAsDefault, setSaveAsDefault] = useState<Record<string, boolean>>({});
+  const [editableItems, setEditableItems] = useState<Record<string, MealPresetItem[]>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createDescription, setCreateDescription] = useState("");
+  const [createFile, setCreateFile] = useState<File | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [newPreset, setNewPreset] = useState<MealPreset | null>(null);
+  const [nutritionReview, setNutritionReview] = useState<{ presetId: string; itemIndex: number; source: NutritionSourceDraft } | null>(null);
+  const [nutritionUploading, setNutritionUploading] = useState("");
+
+  function togglePreset(preset: MealPreset) {
+    const nextId = expandedId === preset.id ? null : preset.id;
+    setExpandedId(nextId);
+    if (nextId && !editableItems[preset.id]) {
+      setEditableItems((current) => ({ ...current, [preset.id]: preset.items.map((item) => ({ ...item })) }));
+    }
+  }
+
+  function currentGrams(item: MealPresetItem) {
+    return grams[item.id] ?? (item.defaultGrams == null ? "" : String(item.defaultGrams));
+  }
+
+  function setCurrentGrams(itemId: string, value: string) {
+    setGrams((current) => ({ ...current, [itemId]: value }));
+  }
+
+  function configuredItems(preset: MealPreset) {
+    return preset.items.map((item) => {
+      const value = currentGrams(item);
+      return { id: item.id, grams: value ? Number(value) : null };
+    });
+  }
+
+  function updateEditableItem(presetId: string, index: number, patch: Partial<MealPresetItem>) {
+    setEditableItems((current) => ({
+      ...current,
+      [presetId]: (current[presetId] || []).map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item))
+    }));
+  }
+
+  async function savePresetItems(preset: MealPreset) {
+    const items = editableItems[preset.id] || preset.items;
+    if (!items.length) return onError("模板至少需要一种食物");
+    setSavingId(preset.id);
+    const response = await fetch(`/api/meal-presets/${preset.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: preset.name,
+        description: preset.description,
+        items: items.map(({ name, portion, defaultGrams, kcal, confidence, calculationSource, nutritionSourceId }) => ({
+          name,
+          portion,
+          defaultGrams,
+          kcal,
+          confidence,
+          calculationSource,
+          nutritionSourceId
+        }))
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    setSavingId(null);
+    if (!response.ok) return onError(data.error || "模板保存失败");
+    setEditableItems((current) => ({ ...current, [preset.id]: data.preset.items }));
+    setGrams((current) => {
+      const next = { ...current };
+      data.preset.items.forEach((item: MealPresetItem) => {
+        if (item.defaultGrams != null) next[item.id] = String(item.defaultGrams);
+      });
+      return next;
+    });
+    await onReload();
+  }
+
+  async function analyzeNutrition(file: File, preset: MealPreset, itemIndex: number) {
+    const item = (editableItems[preset.id] || preset.items)[itemIndex];
+    const key = `${preset.id}-${itemIndex}`;
+    setNutritionUploading(key);
+    const form = new FormData();
+    form.append("image", file);
+    form.append("name", item.name);
+    const response = await fetch("/api/nutrition-sources/analyze", { method: "POST", body: form });
+    const data = await response.json().catch(() => ({}));
+    setNutritionUploading("");
+    if (!response.ok) return onError(data.error || "成分表识别失败");
+    setNutritionReview({ presetId: preset.id, itemIndex, source: data.source });
+  }
+
+  async function saveNutritionSource() {
+    if (!nutritionReview) return;
+    const response = await fetch("/api/nutrition-sources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(nutritionReview.source)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return onError(data.error || "营养信息保存失败");
+    const preset = presets.find((item) => item.id === nutritionReview.presetId);
+    if (!preset) return onError("对应模板不存在");
+    const updatedItems = (editableItems[preset.id] || preset.items).map((item, itemIndex) => itemIndex === nutritionReview.itemIndex ? {
+      ...item,
+      nutritionSourceId: data.source.id,
+      nutritionSource: data.source,
+      calculationSource: "nutrition_label"
+    } : item);
+    setEditableItems((current) => ({ ...current, [preset.id]: updatedItems }));
+    const bindResponse = await fetch(`/api/meal-presets/${preset.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: preset.name,
+        description: preset.description,
+        items: updatedItems.map(({ name, portion, defaultGrams, kcal, confidence, calculationSource, nutritionSourceId }) => ({
+          name,
+          portion,
+          defaultGrams,
+          kcal,
+          confidence,
+          calculationSource,
+          nutritionSourceId
+        }))
+      })
+    });
+    if (!bindResponse.ok) return onError("成分表已保存，但绑定模板失败");
+    const boundData = await bindResponse.json();
+    setEditableItems((current) => ({ ...current, [preset.id]: boundData.preset.items }));
+    setNutritionReview(null);
+    await onReload();
+  }
+
+  async function analyzeNewPreset() {
+    if (!createFile && !createDescription.trim()) return onError("请上传套餐图片或填写套餐描述");
+    setAnalyzing(true);
+    const form = new FormData();
+    if (createFile) form.append("image", createFile);
+    form.append("description", createDescription.trim());
+    const response = await fetch("/api/meal-presets/analyze", { method: "POST", body: form });
+    const data = await response.json().catch(() => ({}));
+    setAnalyzing(false);
+    if (!response.ok) return onError(data.error || "套餐拆解失败");
+    setNewPreset({
+      ...data.preset,
+      id: "new",
+      usageCount: 0,
+      items: data.preset.items.map((item: MealPresetItem, index: number) => ({ ...item, id: `new-${index}`, nutritionSource: null }))
+    });
+  }
+
+  async function saveNewPreset() {
+    if (!newPreset) return;
+    setSavingId("new");
+    const response = await fetch("/api/meal-presets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: newPreset.name,
+        imageUrl: newPreset.imageUrl,
+        description: newPreset.description,
+        baseKcal: newPreset.items.reduce((total, item) => total + item.kcal, 0),
+        items: newPreset.items.map(({ name, portion, defaultGrams, kcal, confidence, calculationSource, nutritionSourceId }) => ({
+          name,
+          portion,
+          defaultGrams,
+          kcal,
+          confidence,
+          calculationSource,
+          nutritionSourceId
+        }))
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    setSavingId(null);
+    if (!response.ok) return onError(data.error || "新建模板失败");
+    setCreating(false);
+    setCreateDescription("");
+    setCreateFile(null);
+    setNewPreset(null);
+    await onReload();
+  }
+
   return (
     <section className="panel p-4 sm:p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -858,13 +1064,50 @@ function QuickPresetsCard({
           <p className="text-sm font-medium text-fuchsia-600">Quick Meals</p>
           <h3 className="text-lg font-semibold">常用餐食</h3>
         </div>
-        <span className="rounded-full bg-fuchsia-50 px-2.5 py-1 text-xs font-medium text-fuchsia-700">{presets.length} 个模板</span>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-fuchsia-50 px-2.5 py-1 text-xs font-medium text-fuchsia-700">{presets.length} 个模板</span>
+          <button onClick={() => setCreating((value) => !value)} className="flex h-9 items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-xs font-semibold text-white">
+            {creating ? <X size={15} /> : <Plus size={15} />}
+            {creating ? "取消" : "新建模板"}
+          </button>
+        </div>
       </div>
+      {creating ? (
+        <div className="mb-4 rounded-lg border border-fuchsia-100 bg-fuchsia-50/50 p-3">
+          <p className="font-semibold">新建常用餐食模板</p>
+          <textarea value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} placeholder="例如：早餐，燕麦 50g、每日坚果一包、无糖酸奶 200g" className="mt-2 min-h-20 w-full rounded-lg border border-slate-200 bg-white p-3 text-sm outline-none focus:border-fuchsia-400" />
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <label className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600">
+              <Upload size={15} />
+              {createFile ? createFile.name : "可选套餐图片"}
+              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => setCreateFile(event.target.files?.[0] || null)} />
+            </label>
+            <button onClick={analyzeNewPreset} disabled={analyzing} className="flex h-9 items-center gap-1.5 rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white disabled:opacity-60">
+              <Send size={15} />
+              {analyzing ? "拆解中" : "AI 自动拆解"}
+            </button>
+          </div>
+          {newPreset ? (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+              <input value={newPreset.name} onChange={(event) => setNewPreset({ ...newPreset, name: event.target.value })} className="h-9 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold outline-none focus:border-fuchsia-400" />
+              <div className="mt-2 space-y-2">
+                {newPreset.items.map((item, index) => (
+                  <PresetItemEditor key={item.id} item={item} onChange={(patch) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...patch } : current)) })} onDelete={() => setNewPreset({ ...newPreset, items: newPreset.items.filter((_, itemIndex) => itemIndex !== index) })} />
+                ))}
+              </div>
+              <button onClick={saveNewPreset} disabled={savingId === "new"} className="mt-3 flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-60">
+                <Save size={15} />
+                {savingId === "new" ? "保存中" : "保存模板"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {presets.length ? (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {presets.map((preset) => {
-            const multiplier = multipliers[preset.id] || "1";
-            const adjustedKcal = Math.round(preset.baseKcal * (Number(multiplier) || 0));
+            const expanded = expandedId === preset.id;
+            const editing = editableItems[preset.id] || preset.items;
             return (
               <div key={preset.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
                 <div className="flex gap-3">
@@ -873,7 +1116,7 @@ function QuickPresetsCard({
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-slate-950">{preset.name}</p>
-                        <p className="mt-1 text-sm text-slate-500">{adjustedKcal} kcal</p>
+                        <p className="mt-1 text-sm text-slate-500">{preset.baseKcal} kcal</p>
                       </div>
                       <button onClick={() => onDelete(preset)} className="text-slate-400 transition hover:text-red-600" aria-label={`删除 ${preset.name}`}>
                         <Trash2 size={16} />
@@ -882,19 +1125,45 @@ function QuickPresetsCard({
                     <p className="mt-1 truncate text-xs text-slate-400">{preset.items.map((item) => item.portion || item.name).join(" · ") || "已确认餐食"}</p>
                   </div>
                 </div>
+                {expanded ? (
+                  <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+                    {editing.map((item, index) => (
+                      <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-2">
+                        <PresetItemEditor item={item} onChange={(patch) => updateEditableItem(preset.id, index, patch)} onDelete={() => setEditableItems((current) => ({ ...current, [preset.id]: editing.filter((_, itemIndex) => itemIndex !== index) }))} />
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <GramsSelect value={currentGrams(item)} onChange={(value) => setCurrentGrams(item.id, value)} label={`${item.name} 本次克数`} />
+                          <label className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 px-2 text-xs font-semibold text-slate-600">
+                            <FileText size={14} />
+                            {nutritionUploading === `${preset.id}-${index}` ? "识别中" : item.nutritionSource ? "替换成分表" : "上传成分表"}
+                            <input type="file" accept="image/*" capture="environment" className="hidden" disabled={Boolean(nutritionUploading)} onChange={(event) => event.target.files?.[0] && analyzeNutrition(event.target.files[0], preset, index)} />
+                          </label>
+                        </div>
+                        <p className="mt-1 text-xs text-slate-400">
+                          {item.nutritionSource ? `营养库：${item.nutritionSource.name} · ${item.nutritionSource.kcalPer100g} kcal/100g` : "未绑定成分表，修改克数时由 AI 复核"}
+                        </p>
+                      </div>
+                    ))}
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => setEditableItems((current) => ({ ...current, [preset.id]: [...editing, emptyPresetItem(preset.id)] }))} className="flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600">
+                        <Plus size={14} /> 食物
+                      </button>
+                      <button onClick={() => savePresetItems(preset)} disabled={savingId === preset.id} className="flex h-9 items-center gap-1 rounded-lg border border-fuchsia-100 bg-white px-2 text-xs font-semibold text-fuchsia-700 disabled:opacity-60">
+                        <Save size={14} /> {savingId === preset.id ? "保存中" : "保存模板"}
+                      </button>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-slate-500">
+                      <input type="checkbox" checked={saveAsDefault[preset.id] || false} onChange={(event) => setSaveAsDefault((current) => ({ ...current, [preset.id]: event.target.checked }))} />
+                      本次修改克数同时保存为以后默认值
+                    </label>
+                  </div>
+                ) : null}
                 <div className="mt-3 flex gap-2">
-                  <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2">
-                    <span className="text-xs text-slate-500">份数</span>
-                    <input
-                      value={multiplier}
-                      onChange={(event) => onMultiplier(preset.id, event.target.value)}
-                      inputMode="decimal"
-                      className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none"
-                      aria-label={`${preset.name} 份数`}
-                    />
-                  </label>
+                  <button onClick={() => togglePreset(preset)} className="flex h-10 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600">
+                    <ChevronDown size={16} className={expanded ? "rotate-180" : ""} />
+                    {expanded ? "收起" : "调整克数"}
+                  </button>
                   <button
-                    onClick={() => onUse(preset)}
+                    onClick={() => onUse(preset, configuredItems(preset), saveAsDefault[preset.id] || false)}
                     disabled={addingId === preset.id}
                     className="flex h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
                   >
@@ -911,8 +1180,63 @@ function QuickPresetsCard({
           还没有常用餐食。确认餐食后，在今日记录中点击“存为常用”。
         </div>
       )}
+      {nutritionReview ? (
+        <NutritionReviewCard review={nutritionReview} onChange={(source) => setNutritionReview({ ...nutritionReview, source })} onCancel={() => setNutritionReview(null)} onSave={saveNutritionSource} />
+      ) : null}
     </section>
   );
+}
+
+const GRAMS_OPTIONS = ["", "25", "50", "75", "100", "125", "150", "200", "250", "300", "custom"];
+
+function GramsSelect({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
+  const [custom, setCustom] = useState(!GRAMS_OPTIONS.includes(value) && Boolean(value));
+  return (
+    <div className="flex min-w-0 flex-1 gap-1">
+      <select value={custom ? "custom" : value} onChange={(event) => event.target.value === "custom" ? setCustom(true) : (setCustom(false), onChange(event.target.value))} className="h-9 min-w-24 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold outline-none" aria-label={label}>
+        <option value="">克数未填</option>
+        {GRAMS_OPTIONS.slice(1, -1).map((grams) => <option key={grams} value={grams}>{grams}g</option>)}
+        <option value="custom">自定义</option>
+      </select>
+      {custom ? <input value={value} onChange={(event) => onChange(event.target.value)} inputMode="decimal" placeholder="克数" className="h-9 min-w-0 flex-1 rounded-lg border border-slate-200 px-2 text-xs outline-none" aria-label={`${label}自定义`} /> : null}
+    </div>
+  );
+}
+
+function PresetItemEditor({ item, onChange, onDelete }: { item: MealPresetItem; onChange: (patch: Partial<MealPresetItem>) => void; onDelete: () => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <input value={item.name} onChange={(event) => onChange({ name: event.target.value })} className="h-8 min-w-0 flex-1 rounded-lg border border-slate-200 px-2 text-xs font-semibold outline-none focus:border-fuchsia-400" aria-label="食物名称" />
+      <GramsSelect value={item.defaultGrams == null ? "" : String(item.defaultGrams)} onChange={(value) => onChange({ defaultGrams: value ? Number(value) : null })} label={`${item.name} 默认克数`} />
+      <button onClick={onDelete} className="text-slate-400 hover:text-red-600" aria-label={`删除 ${item.name}`}><Trash2 size={15} /></button>
+    </div>
+  );
+}
+
+function NutritionReviewCard({ review, onChange, onCancel, onSave }: { review: { source: NutritionSourceDraft }; onChange: (source: NutritionSourceDraft) => void; onCancel: () => void; onSave: () => void }) {
+  const source = review.source;
+  const numberValue = (value: string) => value ? Number(value) : null;
+  return (
+    <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div><p className="font-semibold">确认营养成分表</p><p className="mt-1 text-xs text-slate-500">AI 已换算为每 100g，请核对后保存到个人营养库。</p></div>
+        <button onClick={onCancel} className="text-slate-400" aria-label="关闭"><X size={17} /></button>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-6">
+        <input value={source.name} onChange={(event) => onChange({ ...source, name: event.target.value })} className="h-9 rounded-lg border border-slate-200 px-2 text-xs sm:col-span-2" aria-label="食品名称" />
+        <input value={source.kcalPer100g} onChange={(event) => onChange({ ...source, kcalPer100g: Number(event.target.value) })} inputMode="decimal" className="h-9 rounded-lg border border-slate-200 px-2 text-xs" aria-label="每100克热量" />
+        <input value={source.proteinPer100g ?? ""} onChange={(event) => onChange({ ...source, proteinPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="蛋白质 g" className="h-9 rounded-lg border border-slate-200 px-2 text-xs" />
+        <input value={source.fatPer100g ?? ""} onChange={(event) => onChange({ ...source, fatPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="脂肪 g" className="h-9 rounded-lg border border-slate-200 px-2 text-xs" />
+        <input value={source.carbsPer100g ?? ""} onChange={(event) => onChange({ ...source, carbsPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="碳水 g" className="h-9 rounded-lg border border-slate-200 px-2 text-xs" />
+      </div>
+      <p className="mt-2 text-xs text-slate-500">热量：{source.kcalPer100g || 0} kcal / 100g{source.notes ? ` · ${source.notes}` : ""}</p>
+      <button onClick={onSave} className="mt-3 flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white"><Save size={14} />保存并绑定</button>
+    </div>
+  );
+}
+
+function emptyPresetItem(presetId: string): MealPresetItem {
+  return { id: `${presetId}-${Date.now()}`, name: "新食物", portion: null, defaultGrams: null, kcal: 0, confidence: null, calculationSource: null, nutritionSourceId: null, nutritionSource: null };
 }
 
 function TodayMeals({

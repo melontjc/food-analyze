@@ -76,7 +76,8 @@ export async function POST(request: NextRequest) {
             name: normalizeMealText(item.name) || "餐食",
             portion: normalizeMealText(item.portion),
             kcal: item.kcal,
-            confidence: item.confidence ?? null
+            confidence: item.confidence ?? null,
+            calculationSource: "ai_estimate"
           }))
         }
       },
