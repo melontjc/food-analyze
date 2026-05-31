@@ -550,7 +550,7 @@ function StatusStrip({
   dateKey: string;
   onDate: (date: string) => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const weekDays = useMemo(() => {
     const selectedDate = new Date(`${dateKey}T00:00:00.000Z`);
     const day = selectedDate.getUTCDay();
@@ -567,17 +567,33 @@ function StatusStrip({
     });
   }, [dateKey]);
 
-  function openDatePicker() {
-    if (typeof inputRef.current?.showPicker === "function") {
-      inputRef.current.showPicker();
-      return;
-    }
-    inputRef.current?.click();
+  function shiftWeek(offset: number) {
+    const date = new Date(`${dateKey}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() + offset * 7);
+    onDate(date.toISOString().slice(0, 10));
+  }
+
+  function handleTouchEnd(event: React.TouchEvent<HTMLDivElement>) {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    const touch = event.changedTouches[0];
+    if (!start || !touch) return;
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (Math.abs(deltaX) < 42 || Math.abs(deltaX) <= Math.abs(deltaY)) return;
+    shiftWeek(deltaX > 0 ? -1 : 1);
   }
 
   return (
     <section className="app-card flex items-center gap-2 bg-white/90 p-2">
-      <div className="grid min-w-0 flex-1 grid-cols-7 gap-1">
+      <div
+        className="grid min-w-0 flex-1 touch-pan-y grid-cols-7 gap-1"
+        onTouchStart={(event) => {
+          const touch = event.touches[0];
+          if (touch) touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+        }}
+        onTouchEnd={handleTouchEnd}
+      >
         {weekDays.map((day) => {
           const active = day.key === dateKey;
           return (
@@ -595,10 +611,16 @@ function StatusStrip({
           );
         })}
       </div>
-      <input ref={inputRef} type="date" value={dateKey} onChange={(event) => onDate(event.target.value)} className="sr-only" aria-label="选择日期" />
-      <button type="button" onClick={openDatePicker} className="app-icon-button shrink-0" aria-label="选择日期">
-        <CalendarDays size={18} />
-      </button>
+      <label className="app-icon-button relative shrink-0 cursor-pointer overflow-hidden" aria-label="选择日期">
+        <CalendarDays size={18} className="pointer-events-none" />
+        <input
+          type="date"
+          value={dateKey}
+          onChange={(event) => onDate(event.target.value)}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+          aria-label="选择日期"
+        />
+      </label>
     </section>
   );
 }
