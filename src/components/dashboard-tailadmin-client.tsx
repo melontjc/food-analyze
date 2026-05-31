@@ -602,9 +602,12 @@ function MissionCard({ dashboard }: { dashboard: Dashboard | null }) {
               <circle cx="110" cy="110" r="52" fill="none" stroke="#22c55e" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${weekProgress * 3.26} 326`} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-              <Flame size={28} className="mb-2 text-slate-950" />
-              <p className="text-3xl font-bold tracking-normal text-slate-950">{Math.round(intake)} / {Math.round(totalBurn || 0)}</p>
-              <p className="text-sm text-slate-500">kcal 摄入 / 总消耗</p>
+              <Flame size={24} className="mb-1.5 text-slate-950" />
+              <p className="max-w-32 whitespace-nowrap text-xl font-bold tracking-normal text-slate-950 sm:text-2xl">{Math.round(intake)} / {Math.round(totalBurn || 0)}</p>
+              <p className="mt-1 text-[11px] leading-4 text-slate-500">
+                <span className="block">kcal</span>
+                <span className="block">摄入 / 总消耗</span>
+              </p>
             </div>
           </div>
         </div>
