@@ -364,75 +364,75 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   }, [draft]);
 
   return (
-    <main className="min-h-screen bg-[#f5e9ee] text-slate-900">
-      <div className="relative mx-auto min-h-screen w-full max-w-[480px] overflow-hidden bg-[linear-gradient(180deg,#fff8f9_0%,#fdf9fb_42%,#f8f4f7_100%)] pb-[calc(5.5rem+env(safe-area-inset-bottom))] shadow-[0_0_70px_rgba(131,77,104,0.20)]">
+    <main className="min-h-screen bg-[#f7eff4] text-slate-900">
+      <div className="relative mx-auto min-h-screen w-full max-w-[480px] overflow-hidden bg-[linear-gradient(180deg,#fff9fb_0%,#fefbfc_42%,#faf6fa_100%)] pb-[calc(5.5rem+env(safe-area-inset-bottom))] shadow-[0_0_70px_rgba(138,91,132,0.16)]">
         <AppHeader activeTab={activeTab} onNavigate={navigateTo} />
-        <section className="space-y-4 px-4 pb-4">
-          {activeTab === "home" ? (
-            <HomeDashboard
-              dashboard={dashboard}
-              dateKey={dateKey}
-              syncing={syncing}
-              presets={presets}
-              addingId={presetAddingId}
-              weightInput={weightInput}
-              weightSaving={weightSaving}
-              savingPresetId={presetSavingId}
-              onDate={setDateKey}
-              onSync={syncNow}
-              onUsePreset={usePreset}
-              onWeight={setWeightInput}
-              onSaveWeight={saveWeight}
-              onSavePreset={savePreset}
-              onNavigate={navigateTo}
-            />
-          ) : null}
-          {activeTab === "capture" ? (
-            <AppTabSection eyebrow="Meal Vision" title="记一餐" description="上传图片或填写描述，确认热量后再计入今日统计。">
-              <div className="space-y-4">
-                <UploadPanel
-                  inputRef={inputRef}
-                  loading={loading}
-                  selectedFile={selectedFile}
-                  previewUrl={previewUrl}
-                  mealContext={mealContext}
-                  error={error}
-                  onChoose={chooseFile}
-                  onPick={() => inputRef.current?.click()}
-                  onContext={setMealContext}
-                  onAnalyze={analyze}
-                />
-                {draft ? <DraftCard draft={draft} kcal={kcal} compression={compression} onKcal={setKcal} onConfirm={confirmDraft} /> : null}
-              </div>
-            </AppTabSection>
-          ) : null}
-          {activeTab === "quick" ? (
-            <AppTabSection eyebrow="Quick Meals" title="常用餐食" description="维护模板和个人营养库，常吃的食物可以更快计入。">
-              <QuickPresetsCard
+        <section className="px-4 pb-4">
+          <div key={activeTab} className="app-tab-enter space-y-4">
+            {activeTab === "home" ? (
+              <HomeDashboard
+                dashboard={dashboard}
+                dateKey={dateKey}
                 presets={presets}
                 addingId={presetAddingId}
-                onUse={usePreset}
-                onDelete={deletePreset}
-                onReload={loadPresets}
-                onError={setError}
+                weightInput={weightInput}
+                weightSaving={weightSaving}
+                savingPresetId={presetSavingId}
+                onDate={setDateKey}
+                onUsePreset={usePreset}
+                onWeight={setWeightInput}
+                onSaveWeight={saveWeight}
+                onSavePreset={savePreset}
+                onNavigate={navigateTo}
               />
-            </AppTabSection>
-          ) : null}
-          {activeTab === "trends" ? (
-            <AppTabSection eyebrow="Reports" title="趋势" description="按周观察热量缺口和体重变化，按四周查看长期趋势。">
-              <div className="space-y-4">
-                <TrendCard dashboard={dashboard} />
-                <WeightChartCard days={dashboard?.days || []} />
-                <MonthlyStatsCard dashboard={dashboard} />
-              </div>
-            </AppTabSection>
-          ) : null}
-          {activeTab === "more" ? (
-            <AppTabSection eyebrow="Settings" title="更多" description="管理数据源、同步状态和连接设置。">
-              <MorePage dashboard={dashboard} syncing={syncing} onSync={syncNow} />
-            </AppTabSection>
-          ) : null}
-          {activeTab !== "capture" && error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+            ) : null}
+            {activeTab === "capture" ? (
+              <AppTabSection eyebrow="Meal Vision" title="记一餐" description="上传图片或填写描述，确认热量后再计入今日统计。">
+                <div className="space-y-4">
+                  <UploadPanel
+                    inputRef={inputRef}
+                    loading={loading}
+                    selectedFile={selectedFile}
+                    previewUrl={previewUrl}
+                    mealContext={mealContext}
+                    error={error}
+                    onChoose={chooseFile}
+                    onPick={() => inputRef.current?.click()}
+                    onContext={setMealContext}
+                    onAnalyze={analyze}
+                  />
+                  {draft ? <DraftCard draft={draft} kcal={kcal} compression={compression} onKcal={setKcal} onConfirm={confirmDraft} /> : null}
+                </div>
+              </AppTabSection>
+            ) : null}
+            {activeTab === "quick" ? (
+              <AppTabSection eyebrow="Quick Meals" title="常用餐食" description="维护模板和个人营养库，常吃的食物可以更快计入。">
+                <QuickPresetsCard
+                  presets={presets}
+                  addingId={presetAddingId}
+                  onUse={usePreset}
+                  onDelete={deletePreset}
+                  onReload={loadPresets}
+                  onError={setError}
+                />
+              </AppTabSection>
+            ) : null}
+            {activeTab === "trends" ? (
+              <AppTabSection eyebrow="Reports" title="趋势" description="按周观察热量缺口和体重变化，按四周查看长期趋势。">
+                <div className="space-y-4">
+                  <TrendCard dashboard={dashboard} />
+                  <WeightChartCard days={dashboard?.days || []} />
+                  <MonthlyStatsCard dashboard={dashboard} />
+                </div>
+              </AppTabSection>
+            ) : null}
+            {activeTab === "more" ? (
+              <AppTabSection eyebrow="Settings" title="更多" description="管理数据源、同步状态和连接设置。">
+                <MorePage dashboard={dashboard} syncing={syncing} onSync={syncNow} />
+              </AppTabSection>
+            ) : null}
+            {activeTab !== "capture" && error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+          </div>
         </section>
         <BottomNavigation activeTab={activeTab} onNavigate={navigateTo} />
       </div>
@@ -473,7 +473,7 @@ function BottomNavItem({ icon, label, active, primary, onClick }: { icon: React.
   if (primary) {
     return (
       <button type="button" onClick={onClick} className="group relative flex min-h-12 min-w-0 items-end justify-center outline-none" aria-label={label}>
-        <span className={`absolute -top-9 flex h-16 w-16 items-center justify-center rounded-full text-white ring-[7px] ring-white/95 transition duration-200 group-focus-visible:ring-[9px] group-focus-visible:ring-fuchsia-200/80 ${active ? "bg-fuchsia-700 shadow-[0_14px_26px_rgba(192,38,211,0.34)]" : "bg-fuchsia-600 shadow-[0_12px_24px_rgba(192,38,211,0.26)] hover:bg-fuchsia-700"}`}>
+        <span className={`absolute -top-9 flex h-16 w-16 items-center justify-center rounded-full text-white ring-[7px] ring-white/95 transition duration-200 group-active:scale-95 group-focus-visible:ring-[9px] group-focus-visible:ring-fuchsia-200/80 ${active ? "scale-[1.04] bg-fuchsia-700 shadow-[0_14px_26px_rgba(144,77,164,0.28)]" : "bg-fuchsia-600 shadow-[0_12px_24px_rgba(168,95,188,0.22)] hover:bg-fuchsia-700"}`}>
           {icon}
         </span>
         <span className="sr-only">{label}</span>
@@ -482,8 +482,8 @@ function BottomNavItem({ icon, label, active, primary, onClick }: { icon: React.
   }
 
   return (
-    <button type="button" onClick={onClick} className={`flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 px-1 text-[10px] font-medium outline-none transition duration-200 focus-visible:text-fuchsia-600 ${active ? "text-fuchsia-600" : "text-slate-400 hover:text-slate-600"}`}>
-      {icon}
+    <button type="button" onClick={onClick} className={`group flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 px-1 text-[10px] font-medium outline-none transition-colors duration-200 focus-visible:text-fuchsia-600 ${active ? "font-semibold text-fuchsia-600" : "text-slate-400 hover:text-slate-600"}`}>
+      <span className={`transition-transform duration-200 group-active:scale-90 ${active ? "scale-110" : "scale-100"}`}>{icon}</span>
       <span>{label}</span>
     </button>
   );
@@ -505,14 +505,12 @@ function AppTabSection({ eyebrow, title, description, children }: { eyebrow: str
 function HomeDashboard({
   dashboard,
   dateKey,
-  syncing,
   presets,
   addingId,
   weightInput,
   weightSaving,
   savingPresetId,
   onDate,
-  onSync,
   onUsePreset,
   onWeight,
   onSaveWeight,
@@ -521,14 +519,12 @@ function HomeDashboard({
 }: {
   dashboard: Dashboard | null;
   dateKey: string;
-  syncing: boolean;
   presets: MealPreset[];
   addingId: string | null;
   weightInput: string;
   weightSaving: boolean;
   savingPresetId: string | null;
   onDate: (date: string) => void;
-  onSync: () => void;
   onUsePreset: (preset: MealPreset, items: Array<{ id: string; grams: number | null }>) => void;
   onWeight: (value: string) => void;
   onSaveWeight: () => void;
@@ -537,7 +533,7 @@ function HomeDashboard({
 }) {
   return (
     <>
-      <StatusStrip dashboard={dashboard} dateKey={dateKey} syncing={syncing} onDate={onDate} onSync={onSync} />
+      <StatusStrip dateKey={dateKey} onDate={onDate} />
       <MissionCard dashboard={dashboard} />
       <WeightInputCard dateKey={dateKey} value={weightInput} saving={weightSaving} onChange={onWeight} onSave={onSaveWeight} />
       <HomeQuickMeals presets={presets} addingId={addingId} onUse={onUsePreset} onViewAll={() => onNavigate("quick")} />
@@ -548,30 +544,60 @@ function HomeDashboard({
 }
 
 function StatusStrip({
-  dashboard,
   dateKey,
-  syncing,
-  onDate,
-  onSync
+  onDate
 }: {
-  dashboard: Dashboard | null;
   dateKey: string;
-  syncing: boolean;
   onDate: (date: string) => void;
-  onSync: () => void;
 }) {
-  const syncedAt = dashboard?.today.syncedAt;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const weekDays = useMemo(() => {
+    const selectedDate = new Date(`${dateKey}T00:00:00.000Z`);
+    const day = selectedDate.getUTCDay();
+    const mondayOffset = day === 0 ? -6 : 1 - day;
+    selectedDate.setUTCDate(selectedDate.getUTCDate() + mondayOffset);
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(selectedDate);
+      date.setUTCDate(selectedDate.getUTCDate() + index);
+      return {
+        key: date.toISOString().slice(0, 10),
+        number: String(date.getUTCDate()).padStart(2, "0"),
+        weekday: ["一", "二", "三", "四", "五", "六", "日"][index]
+      };
+    });
+  }, [dateKey]);
+
+  function openDatePicker() {
+    if (typeof inputRef.current?.showPicker === "function") {
+      inputRef.current.showPicker();
+      return;
+    }
+    inputRef.current?.click();
+  }
+
   return (
-    <section className="app-card flex items-center gap-3 bg-white/90 p-3">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-500">
-        <CalendarDays size={21} />
+    <section className="app-card flex items-center gap-2 bg-white/90 p-2">
+      <div className="grid min-w-0 flex-1 grid-cols-7 gap-1">
+        {weekDays.map((day) => {
+          const active = day.key === dateKey;
+          return (
+            <button
+              type="button"
+              key={day.key}
+              onClick={() => onDate(day.key)}
+              className={`flex min-h-12 min-w-0 flex-col items-center justify-center rounded-lg px-0.5 text-center transition ${active ? "bg-fuchsia-100 text-fuchsia-700 shadow-sm" : "text-slate-400 hover:bg-fuchsia-50 hover:text-fuchsia-600"}`}
+              aria-label={`选择 ${day.key}`}
+              aria-pressed={active}
+            >
+              <span className={`text-sm font-bold ${active ? "text-fuchsia-700" : "text-slate-600"}`}>{day.number}</span>
+              <span className="mt-0.5 text-[10px]">周{day.weekday}</span>
+            </button>
+          );
+        })}
       </div>
-      <div className="min-w-0 flex-1">
-        <input type="date" value={dateKey} onChange={(event) => onDate(event.target.value)} className="h-7 w-full bg-transparent text-sm font-bold text-slate-950 outline-none" aria-label="选择日期" />
-        <p className="truncate text-xs text-slate-400">{syncedAt ? `同步于 ${new Date(syncedAt).toLocaleString()}` : "消耗数据尚未同步"}</p>
-      </div>
-      <button type="button" onClick={onSync} disabled={syncing} className="app-icon-button shrink-0" aria-label="立即同步">
-        <RefreshCw size={18} className={syncing ? "animate-spin" : ""} />
+      <input ref={inputRef} type="date" value={dateKey} onChange={(event) => onDate(event.target.value)} className="sr-only" aria-label="选择日期" />
+      <button type="button" onClick={openDatePicker} className="app-icon-button shrink-0" aria-label="选择日期">
+        <CalendarDays size={18} />
       </button>
     </section>
   );
@@ -767,9 +793,9 @@ function MissionCard({ dashboard }: { dashboard: Dashboard | null }) {
   const intake = today?.intakeKcal ?? 0;
   const totalBurn = today?.totalBurnKcal ?? 0;
   const deficit = today?.deficitKcal;
-  const progress = totalBurn > 0 ? Math.min(100, Math.round((intake / totalBurn) * 100)) : 0;
+  const burnProgress = totalBurn > 0 ? Math.min(100, Math.round((totalBurn / 4000) * 100)) : 0;
+  const intakeProgress = totalBurn > 0 ? Math.min(100, Math.round((intake / totalBurn) * 100)) : 0;
   const deficitProgress = deficit == null || totalBurn <= 0 ? 0 : Math.min(100, Math.round((Math.max(0, deficit) / totalBurn) * 100));
-  const weekProgress = dashboard?.weekDeficitKcal && dashboard.weekDeficitKcal > 0 ? Math.min(100, Math.round((dashboard.weekDeficitKcal / 3850) * 100)) : 0;
 
   return (
     <section className="app-card p-4">
@@ -778,40 +804,32 @@ function MissionCard({ dashboard }: { dashboard: Dashboard | null }) {
           <p className="text-xs font-semibold text-fuchsia-600">Today Mission</p>
           <h2 className="mt-1 text-xl font-bold text-slate-950">今日热量任务</h2>
         </div>
-        <span className="rounded-lg bg-orange-50 px-2.5 py-1 text-xs font-bold text-orange-600">{today?.mealCount ? "餐食已录入" : "等待餐食"}</span>
+        <span className="rounded-lg bg-fuchsia-50 px-2.5 py-1 text-xs font-bold text-fuchsia-700">{today?.mealCount ? "餐食已录入" : "等待餐食"}</span>
       </div>
 
-      <div className="space-y-3">
-        <div className="flex flex-col items-center justify-center">
-          <div className="relative h-60 w-60">
-            <svg viewBox="0 0 220 220" className="h-full w-full -rotate-90">
-              <circle cx="110" cy="110" r="92" fill="none" stroke="#f3e8ff" strokeWidth="8" />
-              <circle cx="110" cy="110" r="92" fill="none" stroke="#a855f7" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${progress * 5.78} 578`} />
-              <circle cx="110" cy="110" r="72" fill="none" stroke="#ffedd5" strokeWidth="8" />
-              <circle cx="110" cy="110" r="72" fill="none" stroke="#fb923c" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${deficitProgress * 4.52} 452`} />
-              <circle cx="110" cy="110" r="52" fill="none" stroke="#dcfce7" strokeWidth="8" />
-              <circle cx="110" cy="110" r="52" fill="none" stroke="#22c55e" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${weekProgress * 3.26} 326`} />
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-center gap-2">
+        <div className="flex min-w-0 flex-col items-center justify-center">
+          <div className="relative aspect-square w-full max-w-48">
+            <svg key={`${burnProgress}-${intakeProgress}-${deficitProgress}`} viewBox="0 0 220 220" className="h-full w-full -rotate-90">
+              <circle cx="110" cy="110" r="92" fill="none" stroke="#ebe9ff" strokeWidth="8" />
+              <circle className="mission-ring-progress" pathLength="100" cx="110" cy="110" r="92" fill="none" stroke="#7c6ee6" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${burnProgress} 100`} />
+              <circle cx="110" cy="110" r="72" fill="none" stroke="#f4e7f8" strokeWidth="8" />
+              <circle className="mission-ring-progress mission-ring-progress-delay-1" pathLength="100" cx="110" cy="110" r="72" fill="none" stroke="#b75ad6" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${intakeProgress} 100`} />
+              <circle cx="110" cy="110" r="52" fill="none" stroke="#fde9ed" strokeWidth="8" />
+              <circle className="mission-ring-progress mission-ring-progress-delay-2" pathLength="100" cx="110" cy="110" r="52" fill="none" stroke="#ee7f93" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${deficitProgress} 100`} />
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-              <Flame size={22} className="mb-1 text-slate-950" />
-              <p className="max-w-32 whitespace-nowrap text-lg font-bold text-slate-950">{Math.round(intake)} / {Math.round(totalBurn || 0)}</p>
-              <p className="mt-1 text-[11px] leading-4 text-slate-500">
-                <span className="block">kcal</span>
-                <span className="block">摄入 / 总消耗</span>
-              </p>
+              <Flame size={20} className="mb-0.5 text-slate-950" />
+              <p className="max-w-28 whitespace-nowrap text-base font-bold text-slate-950">{Math.round(intake)} / {Math.round(totalBurn || 0)}</p>
+              <p className="mt-0.5 text-[10px] leading-4 text-slate-500">摄入 / 总消耗</p>
             </div>
-          </div>
-          <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-slate-500">
-            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-violet-500" />摄入</span>
-            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-orange-400" />今日缺口</span>
-            <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" />本周缺口</span>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <MissionMetric dot="bg-violet-500" label="摄入热量" value={kcalText(today?.intakeKcal)} />
-          <MissionMetric dot="bg-blue-500" label="Oura 总消耗" value={totalBurnText(today)} />
-          <MissionMetric dot="bg-orange-400" label="今日缺口" value={deficitText(today)} />
+          <MissionMetric dot="bg-[#b75ad6]" label="摄入热量" value={kcalText(today?.intakeKcal)} />
+          <MissionMetric dot="bg-[#7c6ee6]" label="Oura 总消耗" value={totalBurnText(today)} />
+          <MissionMetric dot="bg-[#ee7f93]" label="今日缺口" value={deficitText(today)} />
           <MissionMetric dot="bg-emerald-500" label="本周预计下降" value={`${dashboard?.predictedWeightLossJin.toFixed(2) || "0.00"} 斤`} />
         </div>
       </div>
@@ -821,9 +839,9 @@ function MissionCard({ dashboard }: { dashboard: Dashboard | null }) {
 
 function MissionMetric({ dot, label, value }: { dot: string; label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-slate-100 bg-white/80 p-3 shadow-sm">
-      <p className="flex items-center gap-1.5 text-xs text-slate-500"><span className={`h-2 w-2 rounded-full ${dot}`} />{label}</p>
-      <p className="mt-2 text-base font-bold text-slate-950">{value}</p>
+    <div className="min-h-16 rounded-lg border border-white/90 bg-white/82 p-2 shadow-sm">
+      <p className="flex items-start gap-1 text-[9px] leading-3.5 text-slate-500"><span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} />{label}</p>
+      <p className="mt-1.5 whitespace-nowrap text-xs font-bold leading-4 text-slate-950">{value}</p>
     </div>
   );
 }
@@ -932,34 +950,37 @@ function WeightInputCard({
   onSave: () => void;
 }) {
   return (
-    <div className="app-card overflow-hidden">
-      <div className="flex items-center justify-between gap-3 bg-orange-50 px-4 py-3">
+    <div className="app-card p-4">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold text-orange-600">Body Weight</p>
-          <h3 className="mt-1 text-lg font-bold">记录今日体重</h3>
+          <p className="text-xs font-semibold text-fuchsia-600">Body Weight</p>
+          <h3 className="mt-1 text-lg font-bold text-slate-950">记录今日体重</h3>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-fuchsia-600">
-          <Weight size={20} />
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-fuchsia-50 text-fuchsia-600">
+          <Weight size={19} />
         </div>
       </div>
-      <div className="p-4">
-        <p className="mb-3 text-xs text-slate-400">{dateKey} · 每日记录更容易看清长期趋势</p>
-        <div className="flex gap-2">
-        <div className="relative flex-1">
+      <p className="mt-3 text-xs text-slate-400">{dateKey} · 每日记录更容易看清长期趋势</p>
+      <div className="mt-3 flex items-center justify-end gap-2">
+        <div className="relative w-36">
           <input
             value={value}
             onChange={(event) => onChange(event.target.value)}
             inputMode="decimal"
             placeholder="例如 76.4"
-            className="h-12 w-full rounded-lg border border-slate-200 bg-white px-3 pr-10 text-lg font-semibold outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-100"
+            className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 pr-9 text-base font-semibold outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-100"
           />
           <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-500">kg</span>
         </div>
-        <button onClick={onSave} disabled={saving} className="flex items-center gap-2 rounded-lg bg-slate-950 px-4 font-semibold text-white disabled:opacity-60">
+        <button
+          onClick={onSave}
+          disabled={saving}
+          aria-label={saving ? "保存中" : "保存体重"}
+          title={saving ? "保存中" : "保存体重"}
+          className="flex h-11 w-11 items-center justify-center rounded-lg bg-fuchsia-100 text-fuchsia-700 transition-colors hover:bg-fuchsia-200 disabled:opacity-60"
+        >
           <Save size={17} />
-          {saving ? "保存中" : "保存"}
         </button>
-      </div>
       </div>
     </div>
   );
@@ -1029,12 +1050,12 @@ function TrendCard({ dashboard }: { dashboard: Dashboard | null }) {
           <h3 className="text-lg font-semibold">本周热量趋势</h3>
         </div>
         <div className="flex items-center gap-4 text-xs text-slate-500">
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-blue-500" />摄入热量</span>
-          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-emerald-600" />每日缺口</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-fuchsia-300" />摄入热量</span>
+          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-fuchsia-700" />每日缺口</span>
         </div>
       </div>
       <ComboTrendChart days={days} />
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <div className="mt-4 grid grid-cols-2 gap-3">
         <SmallStat label="本周累计缺口" value={kcalText(dashboard?.weekDeficitKcal ?? dashboard?.sevenDayDeficitKcal)} />
         <SmallStat label="预计下降" value={`${dashboard?.predictedWeightLossJin.toFixed(2) || "0.00"} 斤`} />
       </div>
@@ -1069,15 +1090,15 @@ function MonthlyStatsCard({ dashboard }: { dashboard: Dashboard | null }) {
           <h3 className="text-lg font-semibold">月度统计</h3>
         </div>
         <div className="flex items-center gap-4 text-xs text-slate-500">
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-indigo-500" />每周缺口</span>
-          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-rose-500" />周均体重</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-fuchsia-300" />每周缺口</span>
+          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-fuchsia-700" />周均体重</span>
         </div>
       </div>
       <FourWeekChart weeks={weeks} />
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <SmallStat label="4 周累计缺口" value={kcalText(dashboard?.fourWeekDeficitKcal)} />
-        <SmallStat label="4 周预计下降" value={`${dashboard?.predictedFourWeekWeightLossJin.toFixed(2) || "0.00"} 斤`} />
-        <SmallStat label="本周平均体重" value={latestWeeklyAverageWeightText(weeks)} />
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <SmallStat label="4 周累计缺口" value={kcalText(dashboard?.fourWeekDeficitKcal)} compact />
+        <SmallStat label="4 周预计下降" value={`${dashboard?.predictedFourWeekWeightLossJin.toFixed(2) || "0.00"} 斤`} compact />
+        <SmallStat label="本周平均体重" value={latestWeeklyAverageWeightText(weeks)} compact />
       </div>
     </div>
   );
@@ -1758,7 +1779,7 @@ function ComboTrendChart({ days, compact }: { days: DashboardDay[]; compact?: bo
           const barHeight = Math.max(2, zeroY - top);
           return (
             <g key={day.dateKey} className="group">
-              <rect x={x(index) - barWidth / 2} y={top} width={barWidth} height={barHeight} rx="5" fill="#3b82f6" opacity={value === 0 ? 0.25 : 0.9} />
+              <rect x={x(index) - barWidth / 2} y={top} width={barWidth} height={barHeight} rx="5" fill="#c595cf" opacity={value === 0 ? 0.25 : 0.88} />
               <HoverBand
                 x={x(index)}
                 bandWidth={bandW}
@@ -1775,11 +1796,11 @@ function ComboTrendChart({ days, compact }: { days: DashboardDay[]; compact?: bo
             </g>
           );
         })}
-        {linePoints ? <polyline points={linePoints} fill="none" stroke="#059669" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {linePoints ? <polyline points={linePoints} fill="none" stroke="#904da4" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" /> : null}
         {deficit.map((value, index) =>
           value == null ? null : (
             <g key={`${days[index]?.dateKey}-point`}>
-              <circle cx={x(index)} cy={y(value)} r="4.5" fill="#059669" />
+              <circle cx={x(index)} cy={y(value)} r="4.5" fill="#904da4" />
               <circle cx={x(index)} cy={y(value)} r="2" fill="#ffffff" />
             </g>
           )
@@ -1819,10 +1840,10 @@ function WeightLineChart({ days }: { days: DashboardDay[] }) {
             </text>
           </g>
         ))}
-        {points ? <polyline points={points} fill="none" stroke="#2563eb" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {points ? <polyline points={points} fill="none" stroke="#a85fbc" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" /> : null}
         {days.map((day, index) => (
           <g key={day.dateKey} className="group">
-            {day.weightKg == null ? <circle cx={x(index)} cy={padding.top + chartH} r="3" fill="#cbd5e1" /> : <circle cx={x(index)} cy={y(day.weightKg)} r="5" fill="#2563eb" />}
+            {day.weightKg == null ? <circle cx={x(index)} cy={padding.top + chartH} r="3" fill="#d8b9df" /> : <circle cx={x(index)} cy={y(day.weightKg)} r="5" fill="#a85fbc" />}
             <HoverBand
               x={x(index)}
               bandWidth={bandW}
@@ -1888,7 +1909,7 @@ function FourWeekChart({ weeks }: { weeks: WeekSummary[] }) {
           const barHeight = Math.max(2, Math.abs(bottom - top));
           return (
             <g key={week.startDateKey} className="group">
-              <rect x={x(index) - barWidth / 2} y={barY} width={barWidth} height={barHeight} rx="6" fill="#6366f1" opacity={value === 0 ? 0.25 : 0.9} />
+              <rect x={x(index) - barWidth / 2} y={barY} width={barWidth} height={barHeight} rx="6" fill="#c595cf" opacity={value === 0 ? 0.25 : 0.88} />
               <HoverBand
                 x={x(index)}
                 bandWidth={bandW}
@@ -1909,11 +1930,11 @@ function FourWeekChart({ weeks }: { weeks: WeekSummary[] }) {
             </g>
           );
         })}
-        {weightPoints ? <polyline points={weightPoints} fill="none" stroke="#f43f5e" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" /> : null}
+        {weightPoints ? <polyline points={weightPoints} fill="none" stroke="#904da4" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" /> : null}
         {weeks.map((week, index) =>
           week.averageWeightKg == null ? null : (
             <g key={`${week.startDateKey}-weight`}>
-              <circle cx={x(index)} cy={yWeight(week.averageWeightKg)} r="4.5" fill="#f43f5e" />
+              <circle cx={x(index)} cy={yWeight(week.averageWeightKg)} r="4.5" fill="#904da4" />
               <circle cx={x(index)} cy={yWeight(week.averageWeightKg)} r="2" fill="#ffffff" />
             </g>
           )
@@ -1979,9 +2000,9 @@ function HoverBand({
 
 function SmallStat({ label, value, compact }: { label: string; value: string; compact?: boolean }) {
   return (
-    <div className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-      <p className={`${compact ? "text-xs" : "text-sm"} text-slate-500`}>{label}</p>
-      <p className={`mt-1 font-semibold text-slate-950 ${compact ? "text-lg" : "text-2xl"}`}>{value}</p>
+    <div className="min-w-0 rounded-lg border border-slate-100 bg-slate-50 p-3">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className={`mt-1 whitespace-nowrap font-semibold text-slate-950 ${compact ? "text-base" : "text-lg"}`}>{value}</p>
     </div>
   );
 }
