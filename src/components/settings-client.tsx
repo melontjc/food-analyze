@@ -57,8 +57,8 @@ export default function SettingsClient() {
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <section className="card p-5">
+    <div className="space-y-4">
+      <section className="app-card p-4">
         <div className="mb-4 flex items-center gap-3">
           <LinkIcon size={22} />
           <div>
@@ -66,12 +66,12 @@ export default function SettingsClient() {
             <p className="text-sm text-stone-500">{status?.oura.connected ? "已连接" : "未连接"}</p>
           </div>
         </div>
-        <a href="/api/connections/oura/start" className="inline-flex rounded-md bg-emerald-700 px-4 py-2 font-semibold text-white">
+        <a href="/api/connections/oura/start" className="inline-flex min-h-11 items-center rounded-lg bg-fuchsia-600 px-4 font-semibold text-white">
           连接 Oura
         </a>
       </section>
 
-      <form onSubmit={saveIntervals} className="card p-5">
+      <form onSubmit={saveIntervals} className="app-card p-4">
         <div className="mb-4 flex items-center gap-3">
           <KeyRound size={22} />
           <div>
@@ -84,7 +84,7 @@ export default function SettingsClient() {
           <input
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
-            className="w-full rounded-md border border-stone-300 bg-white px-3 py-2"
+            className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3"
             type="password"
           />
         </label>
@@ -93,10 +93,10 @@ export default function SettingsClient() {
           <input
             value={athleteId}
             onChange={(event) => setAthleteId(event.target.value)}
-            className="w-full rounded-md border border-stone-300 bg-white px-3 py-2"
+            className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3"
           />
         </label>
-        <button type="submit" className="inline-flex items-center gap-2 rounded-md bg-emerald-700 px-4 py-2 font-semibold text-white">
+        <button type="submit" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-fuchsia-600 px-4 font-semibold text-white">
           <Save size={17} />
           保存
         </button>

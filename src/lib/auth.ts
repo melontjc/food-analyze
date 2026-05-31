@@ -22,6 +22,17 @@ export async function ensureAdminUser() {
   });
 }
 
+function localAdminUser() {
+  const now = new Date();
+  return {
+    id: "local-admin",
+    email: env("ADMIN_EMAIL").toLowerCase(),
+    passwordHash: "local-auth-bypass",
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
 export async function login(email: string, password: string) {
   const user = await ensureAdminUser();
   if (email.toLowerCase() !== user.email) return null;
@@ -39,6 +50,9 @@ export async function createSession(userId: string) {
 }
 
 export async function currentUser() {
+  if (process.env.NODE_ENV !== "production" && process.env.LOCAL_AUTH_BYPASS === "true") {
+    return localAdminUser();
+  }
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return null;
