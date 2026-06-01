@@ -125,6 +125,15 @@ type Dashboard = {
 };
 
 type AppTab = "home" | "quick" | "capture" | "trends" | "more";
+type AnalysisPhase = "idle" | "compressing" | "recognizing";
+type MealAnalysisTimings = {
+  clientCompressionMs: number;
+  serverCompressionMs: number;
+  blobUploadMs: number;
+  openAiMs: number;
+  databaseMs: number;
+  totalServerMs: number;
+};
 type ConnectionStatus = {
   oura: { connected: boolean; scope: string | null; expiresAt: number | null };
   intervals: { connected: boolean; athleteId: string };
@@ -144,6 +153,8 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [analysisPhase, setAnalysisPhase] = useState<AnalysisPhase>("idle");
+  const [analysisTimings, setAnalysisTimings] = useState<MealAnalysisTimings | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [presetSavingId, setPresetSavingId] = useState<string | null>(null);
   const [presetAddingId, setPresetAddingId] = useState<string | null>(null);
@@ -239,22 +250,51 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     }
 
     setLoading(true);
+    setAnalysisPhase(selectedFile ? "compressing" : "recognizing");
+    setAnalysisTimings(null);
     setError("");
     const form = new FormData();
-    if (selectedFile) form.append("image", selectedFile);
+    if (selectedFile) {
+      const compressionStartedAt = performance.now();
+      let uploadFile = selectedFile;
+      try {
+        uploadFile = await compressImageForUpload(selectedFile);
+      } catch {
+        uploadFile = selectedFile;
+      }
+      form.append("image", uploadFile);
+      form.append("clientCompressionMs", String(Math.round(performance.now() - compressionStartedAt)));
+      form.append("clientOriginalBytes", String(selectedFile.size));
+      setAnalysisPhase("recognizing");
+    }
     form.append("dateKey", dateKey);
     form.append("userDescription", description);
 
-    const response = await fetch("/api/meals/analyze", { method: "POST", body: form });
-    const data = await response.json().catch(() => ({}));
+    let response: Response;
+    let data: { entry?: MealEntry; error?: string; timings?: MealAnalysisTimings };
+    try {
+      response = await fetch("/api/meals/analyze", { method: "POST", body: form });
+      data = await response.json().catch(() => ({}));
+    } catch {
+      setLoading(false);
+      setAnalysisPhase("idle");
+      setError("网络连接失败，请稍后重试");
+      return;
+    }
     setLoading(false);
+    setAnalysisPhase("idle");
 
     if (!response.ok && response.status !== 202) {
       setError(data.error || "上传失败");
       return;
     }
 
+    if (!data.entry) {
+      setError("没有收到餐食草稿，请重试");
+      return;
+    }
     setDraft(data.entry);
+    setAnalysisTimings(data.timings || null);
     setKcal(String(data.entry.finalKcal || data.entry.modelKcal || ""));
     setSelectedFile(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -427,6 +467,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
                   <UploadPanel
                     inputRef={inputRef}
                     loading={loading}
+                    analysisPhase={analysisPhase}
                     selectedFile={selectedFile}
                     previewUrl={previewUrl}
                     mealContext={mealContext}
@@ -436,7 +477,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
                     onContext={setMealContext}
                     onAnalyze={analyze}
                   />
-                  {draft ? <DraftCard draft={draft} kcal={kcal} compression={compression} onKcal={setKcal} onGrams={updateDraftItemGrams} onConfirm={confirmDraft} /> : null}
+                  {draft ? <DraftCard draft={draft} kcal={kcal} compression={compression} timings={analysisTimings} onKcal={setKcal} onGrams={updateDraftItemGrams} onConfirm={confirmDraft} /> : null}
                 </div>
               </AppTabSection>
             ) : null}
@@ -932,6 +973,7 @@ function MissionMetric({ dot, label, value }: { dot: string; label: string; valu
 function UploadPanel({
   inputRef,
   loading,
+  analysisPhase,
   selectedFile,
   previewUrl,
   mealContext,
@@ -943,6 +985,7 @@ function UploadPanel({
 }: {
   inputRef: React.RefObject<HTMLInputElement | null>;
   loading: boolean;
+  analysisPhase: AnalysisPhase;
   selectedFile: File | null;
   previewUrl: string | null;
   mealContext: string;
@@ -998,14 +1041,15 @@ function UploadPanel({
             {loading ? (
               <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/80 text-fuchsia-700">
                 <CloudCog size={52} className="animate-pulse" />
-                <span className="text-xl font-semibold">分析中</span>
+                <span className="text-xl font-semibold">{analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图"}</span>
+                <span className="text-xs text-fuchsia-500">{analysisPhase === "compressing" ? "正在减少图片体积，节省上传时间" : "正在识别食物种类并估测重量"}</span>
               </span>
             ) : null}
           </>
         ) : (
           <>
             {loading ? <CloudCog size={52} className="animate-pulse" /> : <Upload size={58} />}
-            <span className="text-3xl font-semibold">{loading ? "分析中" : "上传图片"}</span>
+            <span className="text-3xl font-semibold">{loading ? (analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图") : "上传图片"}</span>
             <span className="text-sm text-fuchsia-500">可选图，也可直接填写文字描述</span>
           </>
         )}
@@ -1028,7 +1072,7 @@ function UploadPanel({
         className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-600 px-5 py-4 text-base font-semibold text-white shadow-sm shadow-fuchsia-600/20 transition hover:bg-fuchsia-700 disabled:cursor-not-allowed disabled:bg-slate-300"
       >
         {loading ? <CloudCog size={19} className="animate-pulse" /> : <Send size={19} />}
-        {loading ? "正在分析" : "发送并分析餐食"}
+        {loading ? (analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图") : "发送并分析餐食"}
       </button>
       {error ? <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
     </div>
@@ -1089,6 +1133,7 @@ function DraftCard({
   draft,
   kcal,
   compression,
+  timings,
   onKcal,
   onGrams,
   onConfirm
@@ -1096,6 +1141,7 @@ function DraftCard({
   draft: MealEntry;
   kcal: string;
   compression: number | null;
+  timings: MealAnalysisTimings | null;
   onKcal: (value: string) => void;
   onGrams: (itemId: string, value: string) => void;
   onConfirm: () => void;
@@ -1112,6 +1158,7 @@ function DraftCard({
             {draft.confidence == null ? "置信度暂无" : `置信度 ${Math.round(draft.confidence * 100)}%`}
             {compression == null ? "" : ` · 图片缩小约 ${compression}%`}
           </p>
+          {timings ? <p className="mt-1 text-xs text-slate-400">总耗时 {seconds(timings.totalServerMs + timings.clientCompressionMs)} · AI 识图 {seconds(timings.openAiMs)} · 上传 {seconds(timings.blobUploadMs)}</p> : null}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <input value={kcal} onChange={(event) => onKcal(event.target.value)} className="h-10 w-28 rounded-lg border border-slate-200 px-3 text-right font-semibold outline-none focus:border-fuchsia-500" inputMode="numeric" />
@@ -2161,6 +2208,49 @@ function deficitText(today: DashboardDay | undefined) {
   if (!today) return "未同步";
   if (today.mealCount === 0) return "未统计";
   return kcalText(today.deficitKcal);
+}
+
+async function compressImageForUpload(file: File) {
+  if (!file.type.startsWith("image/")) return file;
+
+  const image = await loadBrowserImage(file);
+  const maxEdge = 1280;
+  const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) return file;
+  context.drawImage(image, 0, 0, width, height);
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.78));
+  if (!blob || blob.size >= file.size) return file;
+  return new File([blob], `${file.name.replace(/\.[^.]+$/, "") || "meal"}.jpg`, {
+    type: "image/jpeg",
+    lastModified: file.lastModified
+  });
+}
+
+function loadBrowserImage(file: File) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("图片读取失败"));
+    };
+    image.src = url;
+  });
+}
+
+function seconds(milliseconds: number) {
+  return `${(milliseconds / 1000).toFixed(1)} 秒`;
 }
 
 function looksMojibake(value: string) {
