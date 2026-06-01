@@ -32,12 +32,14 @@ export async function POST(request: NextRequest) {
           uploadImage(`meals/model/${stamp}.jpg`, prepared.compressed, prepared.contentType)
         ])
       : [null, null];
+    const nutritionSources = await prisma.nutritionSource.findMany({ orderBy: { updatedAt: "desc" } });
+    const nutritionHints = nutritionSources.map(({ name, kcalPer100g }) => ({ name, kcalPer100g }));
 
     let analysis;
     try {
       analysis = prepared
-        ? await analyzeMealImage(toDataUrl(prepared.compressed, prepared.contentType), userDescription)
-        : await analyzeMealText(userDescription);
+        ? await analyzeMealImage(toDataUrl(prepared.compressed, prepared.contentType), userDescription, nutritionHints)
+        : await analyzeMealText(userDescription, nutritionHints);
     } catch (error) {
       const message = error instanceof Error ? error.message : "餐食分析失败";
       const entry = await prisma.mealEntry.create({
@@ -57,6 +59,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ entry, warning: message }, { status: 202 });
     }
 
+    const analyzedItems = analysis.items.map((item) => {
+      const nutritionSource = findNutritionSource(item.name, nutritionSources);
+      const grams = item.grams ?? null;
+      return {
+        name: normalizeMealText(item.name) || "餐食",
+        portion: normalizeMealText(item.portion),
+        grams,
+        kcal: nutritionSource && grams != null ? Math.round((nutritionSource.kcalPer100g * grams) / 100) : item.kcal,
+        confidence: nutritionSource?.confidence ?? item.confidence ?? null,
+        calculationSource: nutritionSource && grams != null ? "nutrition_label" : "ai_estimate",
+        nutritionSourceId: nutritionSource?.id ?? null
+      };
+    });
+    const adjustedTotalKcal = analyzedItems.length
+      ? analyzedItems.reduce((total, item) => total + item.kcal, 0)
+      : analysis.total_kcal;
+
     const entry = await prisma.mealEntry.create({
       data: {
         dateKey: date,
@@ -66,22 +85,16 @@ export async function POST(request: NextRequest) {
         userDescription: userDescription || null,
         originalBytes: prepared?.originalBytes,
         compressedBytes: prepared?.compressedBytes,
-        modelKcal: analysis.total_kcal,
-        finalKcal: analysis.total_kcal,
+        modelKcal: adjustedTotalKcal,
+        finalKcal: adjustedTotalKcal,
         confidence: analysis.confidence ?? null,
         uncertainty: normalizeMealText(analysis.uncertainty),
         notes: normalizeMealText(analysis.notes),
         items: {
-          create: analysis.items.map((item) => ({
-            name: normalizeMealText(item.name) || "餐食",
-            portion: normalizeMealText(item.portion),
-            kcal: item.kcal,
-            confidence: item.confidence ?? null,
-            calculationSource: "ai_estimate"
-          }))
+          create: analyzedItems
         }
       },
-      include: { items: true }
+      include: { items: { include: { nutritionSource: true } } }
     });
 
     return NextResponse.json({
@@ -98,4 +111,16 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "上传失败";
     return NextResponse.json({ error: message }, { status: 400 });
   }
+}
+
+function findNutritionSource(
+  itemName: string,
+  sources: Array<{ id: string; name: string; kcalPer100g: number; confidence: number | null }>
+) {
+  const itemKey = foodNameKey(itemName);
+  return sources.find((source) => foodNameKey(source.name) === itemKey) || null;
+}
+
+function foodNameKey(value: string) {
+  return value.trim().toLocaleLowerCase().replace(/[\s·,，、()（）\-_/]/g, "");
 }

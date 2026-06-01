@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import {
   BarChart3,
   BookmarkPlus,
@@ -41,7 +42,17 @@ type NutritionSource = {
   notes: string | null;
 };
 type NutritionSourceDraft = Omit<NutritionSource, "id">;
-type MealItem = { id: string; name: string; portion: string | null; grams: number | null; kcal: number; confidence: number | null; calculationSource: string | null };
+type MealItem = {
+  id: string;
+  name: string;
+  portion: string | null;
+  grams: number | null;
+  kcal: number;
+  confidence: number | null;
+  calculationSource: string | null;
+  nutritionSourceId: string | null;
+  nutritionSource?: NutritionSource | null;
+};
 type MealPresetItem = {
   id: string;
   name: string;
@@ -261,7 +272,11 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     const response = await fetch(`/api/meals/${draft.id}/confirm`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ finalKcal: Math.round(finalKcal), notes: draft.notes })
+      body: JSON.stringify({
+        finalKcal: Math.round(finalKcal),
+        notes: draft.notes,
+        items: draft.items.map(({ id, grams }) => ({ id, grams }))
+      })
     });
 
     if (!response.ok) {
@@ -272,6 +287,26 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     setDraft(null);
     setMealContext("");
     await load();
+  }
+
+  function updateDraftItemGrams(itemId: string, value: string) {
+    if (!draft) return;
+    const parsedGrams = value.trim() === "" ? null : Number(value);
+    if (parsedGrams != null && (!Number.isFinite(parsedGrams) || parsedGrams <= 0)) return;
+
+    const items = draft.items.map((item) => {
+      if (item.id !== itemId) return item;
+      const nextKcal =
+        parsedGrams != null && item.nutritionSource
+          ? Math.round((item.nutritionSource.kcalPer100g * parsedGrams) / 100)
+          : parsedGrams != null && item.grams
+            ? Math.round((item.kcal * parsedGrams) / item.grams)
+            : item.kcal;
+      return { ...item, grams: parsedGrams, kcal: nextKcal };
+    });
+    const totalKcal = items.reduce((total, item) => total + item.kcal, 0);
+    setDraft({ ...draft, items, modelKcal: totalKcal, finalKcal: totalKcal });
+    setKcal(String(totalKcal));
   }
 
   async function saveWeight() {
@@ -401,7 +436,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
                     onContext={setMealContext}
                     onAnalyze={analyze}
                   />
-                  {draft ? <DraftCard draft={draft} kcal={kcal} compression={compression} onKcal={setKcal} onConfirm={confirmDraft} /> : null}
+                  {draft ? <DraftCard draft={draft} kcal={kcal} compression={compression} onKcal={setKcal} onGrams={updateDraftItemGrams} onConfirm={confirmDraft} /> : null}
                 </div>
               </AppTabSection>
             ) : null}
@@ -551,6 +586,8 @@ function StatusStrip({
   onDate: (date: string) => void;
 }) {
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const weekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [weekPhase, setWeekPhase] = useState<"idle" | "out" | "in">("idle");
   const weekDays = useMemo(() => {
     const selectedDate = new Date(`${dateKey}T00:00:00.000Z`);
     const day = selectedDate.getUTCDay();
@@ -567,10 +604,23 @@ function StatusStrip({
     });
   }, [dateKey]);
 
+  useEffect(() => {
+    return () => {
+      if (weekTimerRef.current) clearTimeout(weekTimerRef.current);
+    };
+  }, []);
+
   function shiftWeek(offset: number) {
+    if (weekPhase !== "idle") return;
     const date = new Date(`${dateKey}T00:00:00.000Z`);
     date.setUTCDate(date.getUTCDate() + offset * 7);
-    onDate(date.toISOString().slice(0, 10));
+    const nextDateKey = date.toISOString().slice(0, 10);
+    setWeekPhase("out");
+    weekTimerRef.current = setTimeout(() => {
+      onDate(nextDateKey);
+      setWeekPhase("in");
+      weekTimerRef.current = setTimeout(() => setWeekPhase("idle"), 180);
+    }, 120);
   }
 
   function handleTouchEnd(event: React.TouchEvent<HTMLDivElement>) {
@@ -587,7 +637,7 @@ function StatusStrip({
   return (
     <section className="app-card flex items-center gap-2 bg-white/90 p-2">
       <div
-        className="grid min-w-0 flex-1 touch-pan-y grid-cols-7 gap-1"
+        className={`grid min-w-0 flex-1 touch-pan-y grid-cols-7 gap-1 ${weekPhase === "out" ? "week-calendar-fade-out" : weekPhase === "in" ? "week-calendar-fade-in" : ""}`}
         onTouchStart={(event) => {
           const touch = event.touches[0];
           if (touch) touchStartRef.current = { x: touch.clientX, y: touch.clientY };
@@ -710,10 +760,20 @@ function HomeQuickMeals({
 }
 
 function BottomSheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <>
       <button type="button" onClick={onClose} className="fixed inset-0 z-50 bg-slate-950/30" aria-label="关闭弹层" />
-      <section className="fixed inset-x-0 bottom-0 z-[60] mx-auto max-h-[82vh] w-full max-w-[480px] overflow-y-auto rounded-t-2xl bg-white px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 shadow-2xl">
+      <section className="fixed inset-x-0 bottom-0 z-[60] mx-auto max-h-[82vh] w-full max-w-[480px] overscroll-contain overflow-y-auto rounded-t-2xl bg-white px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 shadow-2xl">
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-200" />
         <div className="mb-4 flex items-center justify-between gap-3">
           <h3 className="text-lg font-bold">{title}</h3>
@@ -723,7 +783,8 @@ function BottomSheet({ title, onClose, children }: { title: string; onClose: () 
         </div>
         {children}
       </section>
-    </>
+    </>,
+    document.body
   );
 }
 
@@ -782,7 +843,7 @@ function MorePage({ dashboard, syncing, onSync }: { dashboard: Dashboard | null;
       </section>
       <section className="app-card p-4">
         <div className="mb-3 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600"><Database size={20} /></div>
+          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-fuchsia-50 text-fuchsia-600"><Database size={20} /></div>
           <div>
             <p className="font-bold">数据源</p>
             <p className="text-xs text-slate-400">消耗与训练参考连接</p>
@@ -805,7 +866,7 @@ function ConnectionRow({ label, connected }: { label: string; connected: boolean
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-3">
       <span className="font-medium text-slate-700">{label}</span>
-      <span className={`text-xs font-bold ${connected ? "text-emerald-600" : "text-slate-400"}`}>{connected ? "已连接" : connected === false ? "未连接" : "读取中"}</span>
+      <span className={`text-xs font-bold ${connected ? "text-fuchsia-700" : "text-slate-400"}`}>{connected ? "已连接" : connected === false ? "未连接" : "读取中"}</span>
     </div>
   );
 }
@@ -852,7 +913,7 @@ function MissionCard({ dashboard }: { dashboard: Dashboard | null }) {
           <MissionMetric dot="bg-[#b75ad6]" label="摄入热量" value={kcalText(today?.intakeKcal)} />
           <MissionMetric dot="bg-[#7c6ee6]" label="Oura 总消耗" value={totalBurnText(today)} />
           <MissionMetric dot="bg-[#ee7f93]" label="今日缺口" value={deficitText(today)} />
-          <MissionMetric dot="bg-emerald-500" label="本周预计下降" value={`${dashboard?.predictedWeightLossJin.toFixed(2) || "0.00"} 斤`} />
+          <MissionMetric dot="bg-fuchsia-400" label="本周预计下降" value={`${dashboard?.predictedWeightLossJin.toFixed(2) || "0.00"} 斤`} />
         </div>
       </div>
     </section>
@@ -916,23 +977,39 @@ function UploadPanel({
       <button
         onClick={onPick}
         disabled={loading}
-        className="flex min-h-64 w-full flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-fuchsia-300 bg-fuchsia-50 px-6 py-12 text-fuchsia-700 transition hover:border-fuchsia-500 hover:bg-fuchsia-100 disabled:opacity-70"
+        aria-label={previewUrl ? "替换餐食图片" : "上传餐食图片"}
+        className={`relative flex min-h-64 w-full flex-col items-center justify-center overflow-hidden rounded-lg border text-fuchsia-700 transition disabled:opacity-70 ${
+          previewUrl
+            ? "border-slate-200 bg-white hover:border-fuchsia-400"
+            : "gap-4 border-dashed border-fuchsia-300 bg-fuchsia-50 px-6 py-12 hover:border-fuchsia-500 hover:bg-fuchsia-100"
+        }`}
       >
-        {loading ? <CloudCog size={52} className="animate-pulse" /> : <Upload size={58} />}
-        <span className="text-3xl font-semibold">{loading ? "分析中" : "上传图片"}</span>
-        <span className="text-sm text-fuchsia-500">可选图，也可直接填写文字描述</span>
+        {previewUrl ? (
+          <>
+            <div className="relative flex h-72 w-full items-center justify-center bg-slate-50">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewUrl} alt="待分析餐食" className="max-h-full w-full object-contain" />
+              <span className="absolute bottom-3 rounded-full bg-slate-950/70 px-3 py-1.5 text-xs font-medium text-white">轻触替换图片</span>
+            </div>
+            <div className="flex w-full items-center justify-between gap-3 border-t border-slate-200 px-3 py-2 text-sm text-slate-500">
+              <span className="truncate">{selectedFile?.name}</span>
+              <span className="shrink-0">{selectedFile ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB` : ""}</span>
+            </div>
+            {loading ? (
+              <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/80 text-fuchsia-700">
+                <CloudCog size={52} className="animate-pulse" />
+                <span className="text-xl font-semibold">分析中</span>
+              </span>
+            ) : null}
+          </>
+        ) : (
+          <>
+            {loading ? <CloudCog size={52} className="animate-pulse" /> : <Upload size={58} />}
+            <span className="text-3xl font-semibold">{loading ? "分析中" : "上传图片"}</span>
+            <span className="text-sm text-fuchsia-500">可选图，也可直接填写文字描述</span>
+          </>
+        )}
       </button>
-
-      {previewUrl ? (
-        <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={previewUrl} alt="待分析餐食" className="max-h-72 w-full object-contain" />
-          <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-3 py-2 text-sm text-slate-500">
-            <span className="truncate">{selectedFile?.name}</span>
-            <span>{selectedFile ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB` : ""}</span>
-          </div>
-        </div>
-      ) : null}
 
       <label className="mt-4 block">
         <span className="mb-2 block text-sm font-medium text-slate-700">补充说明</span>
@@ -1013,12 +1090,14 @@ function DraftCard({
   kcal,
   compression,
   onKcal,
+  onGrams,
   onConfirm
 }: {
   draft: MealEntry;
   kcal: string;
   compression: number | null;
   onKcal: (value: string) => void;
+  onGrams: (itemId: string, value: string) => void;
   onConfirm: () => void;
 }) {
   const draftImageUrl = draft.compressedImageUrl || draft.imageUrl;
@@ -1036,7 +1115,7 @@ function DraftCard({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <input value={kcal} onChange={(event) => onKcal(event.target.value)} className="h-10 w-28 rounded-lg border border-slate-200 px-3 text-right font-semibold outline-none focus:border-fuchsia-500" inputMode="numeric" />
-          <button onClick={onConfirm} className="flex h-10 items-center gap-2 rounded-lg bg-emerald-600 px-4 font-semibold text-white">
+          <button onClick={onConfirm} className="flex h-10 items-center gap-2 rounded-lg bg-fuchsia-600 px-4 font-semibold text-white transition hover:bg-fuchsia-700">
             <Check size={17} />
             确认
           </button>
@@ -1051,7 +1130,26 @@ function DraftCard({
                 <span>{item.name}</span>
                 <span>{item.kcal} kcal</span>
               </div>
-              <p className="mt-1 text-sm text-slate-500">{item.portion || "份量未确定"}</p>
+              <p className="mt-1 text-sm text-slate-500">{item.portion || "AI 已识别食物种类"}</p>
+              <div className="mt-2 flex items-center gap-2">
+                <label htmlFor={`draft-grams-${item.id}`} className="text-xs font-medium text-slate-500">实际重量</label>
+                <div className="flex h-10 min-w-0 flex-1 items-center rounded-lg border border-slate-200 bg-white px-2">
+                  <input
+                    id={`draft-grams-${item.id}`}
+                    value={item.grams ?? ""}
+                    onChange={(event) => onGrams(item.id, event.target.value)}
+                    inputMode="decimal"
+                    placeholder="待补充"
+                    className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none"
+                  />
+                  <span className="ml-1 text-xs text-slate-400">g</span>
+                </div>
+              </div>
+              <p className={`mt-2 text-xs ${item.nutritionSource ? "text-fuchsia-700" : "text-slate-400"}`}>
+                {item.nutritionSource
+                  ? `已引用个人营养库：${item.nutritionSource.name} · ${item.nutritionSource.kcalPer100g} kcal/100g`
+                  : "AI 估测重量，可按实际情况调整"}
+              </p>
             </div>
           ))}
         </div>
@@ -1092,7 +1190,7 @@ function WeightChartCard({ days }: { days: DashboardDay[] }) {
           <p className="text-sm font-medium text-slate-500">Weight Trend</p>
           <h3 className="text-lg font-semibold">本周体重追踪</h3>
         </div>
-        <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">手动录入</span>
+        <span className="rounded-full bg-fuchsia-50 px-2.5 py-1 text-xs font-medium text-fuchsia-700">手动录入</span>
       </div>
       <WeightLineChart days={days} />
       <div className="mt-4">
@@ -1430,7 +1528,7 @@ function QuickPresetsCard({
                 {createFile ? createFile.name : "可选套餐图片"}
                 <input type="file" accept="image/*" className="hidden" onChange={(event) => setCreateFile(event.target.files?.[0] || null)} />
               </label>
-              <button onClick={analyzeNewPreset} disabled={analyzing} className="flex min-h-11 items-center gap-1.5 rounded-lg bg-slate-950 px-3 text-xs font-semibold text-white disabled:opacity-60">
+              <button onClick={analyzeNewPreset} disabled={analyzing} className="flex min-h-11 items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-xs font-semibold text-white transition hover:bg-fuchsia-700 disabled:opacity-60">
                 <Send size={15} />
                 {analyzing ? "拆解中" : "AI 自动拆解"}
               </button>
@@ -1443,7 +1541,7 @@ function QuickPresetsCard({
                     <PresetItemEditor key={item.id} item={item} nutritionSources={nutritionSources} showGrams onChange={(patch) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...patch } : current)) })} onSelectSource={(source) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...bindNutritionSource(current, source) } : current)) })} onDelete={() => setNewPreset({ ...newPreset, items: newPreset.items.filter((_, itemIndex) => itemIndex !== index) })} />
                   ))}
                 </div>
-                <button onClick={saveNewPreset} disabled={savingId === "new"} className="mt-3 flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-60">
+                <button onClick={saveNewPreset} disabled={savingId === "new"} className="mt-3 flex min-h-11 items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-xs font-semibold text-white transition hover:bg-fuchsia-700 disabled:opacity-60">
                   <Save size={15} />
                   {savingId === "new" ? "保存中" : "保存模板"}
                 </button>
@@ -1481,7 +1579,7 @@ function QuickPresetsCard({
                   <button
                     onClick={() => onUse(preset, configuredItems(preset))}
                     disabled={addingId === preset.id}
-                    className="flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+                    className="flex min-h-11 items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-sm font-semibold text-white transition hover:bg-fuchsia-700 disabled:opacity-60"
                   >
                     <Plus size={16} />
                     {addingId === preset.id ? "计入中" : "计入"}
@@ -1536,7 +1634,7 @@ function QuickPresetsCard({
             <button onClick={() => {
               onUse(expandedPreset, configuredItems(expandedPreset));
               setExpandedId(null);
-            }} disabled={addingId === expandedPreset.id} className="flex min-h-12 w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white disabled:opacity-60">
+            }} disabled={addingId === expandedPreset.id} className="flex min-h-12 w-full items-center justify-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-sm font-semibold text-white transition hover:bg-fuchsia-700 disabled:opacity-60">
               <Plus size={16} />
               {addingId === expandedPreset.id ? "计入中" : "确认计入"}
             </button>
@@ -1636,7 +1734,7 @@ function NutritionLibraryEditor({
 }) {
   const numberValue = (value: string) => value ? Number(value) : null;
   return (
-    <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50/60 p-3">
+    <div className="mb-4 rounded-lg border border-fuchsia-200 bg-fuchsia-50/60 p-3">
       <div>
         <p className="font-semibold text-slate-950">添加食物到个人营养库</p>
         <p className="mt-1 text-xs leading-5 text-slate-500">可手动填写每 100g 热量，也可以上传包装成分表自动识别。保存后即可在模板食物下拉框中复用。</p>
@@ -1650,12 +1748,12 @@ function NutritionLibraryEditor({
       </div>
       <textarea value={source.notes || ""} onChange={(event) => onChange({ ...source, notes: event.target.value })} placeholder="可选备注，例如品牌、口味或烹饪方式" rows={2} className="mt-2 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" />
       <div className="mt-3 flex flex-wrap gap-2">
-        <label className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-700">
+        <label className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-fuchsia-200 bg-white px-3 text-xs font-semibold text-fuchsia-700">
           <FileText size={15} />
           {analyzing ? "识别中" : source.imageUrl ? "替换成分表" : "上传成分表"}
           <input type="file" accept="image/*" className="hidden" disabled={analyzing} onChange={(event) => event.target.files?.[0] && onAnalyze(event.target.files[0])} />
         </label>
-        <button onClick={onSave} disabled={saving || analyzing} className="flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-60">
+        <button onClick={onSave} disabled={saving || analyzing} className="flex min-h-11 items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-xs font-semibold text-white transition hover:bg-fuchsia-700 disabled:opacity-60">
           <Save size={15} />
           {saving ? "保存中" : "保存食物"}
         </button>
@@ -1668,7 +1766,7 @@ function NutritionReviewCard({ review, onChange, onCancel, onSave }: { review: {
   const source = review.source;
   const numberValue = (value: string) => value ? Number(value) : null;
   return (
-    <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+    <div className="mt-4 rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3">
       <div className="flex items-start justify-between gap-3">
         <div><p className="font-semibold">确认营养成分表</p><p className="mt-1 text-xs text-slate-500">AI 已换算为每 100g，请核对后保存到个人营养库。</p></div>
         <button onClick={onCancel} className="flex h-11 w-11 items-center justify-center text-slate-400" aria-label="关闭"><X size={17} /></button>
@@ -1681,7 +1779,7 @@ function NutritionReviewCard({ review, onChange, onCancel, onSave }: { review: {
         <input value={source.carbsPer100g ?? ""} onChange={(event) => onChange({ ...source, carbsPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="碳水 g" className="h-11 rounded-lg border border-slate-200 px-2 text-xs" />
       </div>
       <p className="mt-2 text-xs text-slate-500">热量：{source.kcalPer100g || 0} kcal / 100g{source.notes ? ` · ${source.notes}` : ""}</p>
-      <button onClick={onSave} className="mt-3 flex min-h-11 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white"><Save size={14} />保存并绑定</button>
+      <button onClick={onSave} className="mt-3 flex min-h-11 items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-xs font-semibold text-white transition hover:bg-fuchsia-700"><Save size={14} />保存并绑定</button>
     </div>
   );
 }

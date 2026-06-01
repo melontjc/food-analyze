@@ -63,10 +63,10 @@ export default function SettingsClient() {
           <LinkIcon size={22} />
           <div>
             <h2 className="text-lg font-semibold">Oura</h2>
-            <p className="text-sm text-stone-500">{status?.oura.connected ? "已连接" : "未连接"}</p>
+            <p className="text-sm text-slate-500">{status?.oura.connected ? "已连接" : "未连接"}</p>
           </div>
         </div>
-        <a href="/api/connections/oura/start" className="inline-flex min-h-11 items-center rounded-lg bg-fuchsia-600 px-4 font-semibold text-white">
+        <a href="/api/connections/oura/start" className="inline-flex min-h-11 items-center rounded-lg bg-fuchsia-600 px-4 font-semibold text-white transition hover:bg-fuchsia-700">
           连接 Oura
         </a>
       </section>
@@ -76,31 +76,31 @@ export default function SettingsClient() {
           <KeyRound size={22} />
           <div>
             <h2 className="text-lg font-semibold">Intervals.icu</h2>
-            <p className="text-sm text-stone-500">{status?.intervals.connected ? `Athlete ${status.intervals.athleteId}` : "未连接"}</p>
+            <p className="text-sm text-slate-500">{status?.intervals.connected ? `Athlete ${status.intervals.athleteId}` : "未连接"}</p>
           </div>
         </div>
         <label className="mb-3 block">
-          <span className="mb-1 block text-sm text-stone-600">API Key</span>
+          <span className="mb-1 block text-sm text-slate-600">API Key</span>
           <input
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
-            className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3"
+            className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-100"
             type="password"
           />
         </label>
         <label className="mb-4 block">
-          <span className="mb-1 block text-sm text-stone-600">Athlete ID</span>
+          <span className="mb-1 block text-sm text-slate-600">Athlete ID</span>
           <input
             value={athleteId}
             onChange={(event) => setAthleteId(event.target.value)}
-            className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3"
+            className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-100"
           />
         </label>
-        <button type="submit" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-fuchsia-600 px-4 font-semibold text-white">
+        <button type="submit" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-fuchsia-600 px-4 font-semibold text-white transition hover:bg-fuchsia-700">
           <Save size={17} />
           保存
         </button>
-        {message ? <p className="mt-3 text-sm text-stone-600">{message}</p> : null}
+        {message ? <p className="mt-3 text-sm text-slate-600">{message}</p> : null}
       </form>
     </div>
   );

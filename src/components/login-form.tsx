@@ -28,25 +28,26 @@ export default function LoginForm() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md items-center px-5">
-      <form onSubmit={submit} className="card w-full p-6">
-        <h1 className="mb-6 text-2xl font-semibold">Food Deficit</h1>
+    <main className="flex min-h-screen items-center justify-center bg-[#f7eff4] px-5 py-8 text-slate-900">
+      <form onSubmit={submit} className="app-card w-full max-w-sm p-6">
+        <p className="text-xs font-semibold text-fuchsia-600">TRACKER</p>
+        <h1 className="mb-6 mt-1 text-2xl font-bold text-slate-950">登录 Food Deficit</h1>
         <label className="mb-4 block">
-          <span className="mb-1 block text-sm text-stone-600">邮箱</span>
+          <span className="mb-1 block text-sm text-slate-600">邮箱</span>
           <input
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            className="w-full rounded-md border border-stone-300 bg-white px-3 py-3 outline-none focus:border-emerald-600"
+            className="h-12 w-full rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-100"
             type="email"
             autoComplete="email"
           />
         </label>
         <label className="mb-4 block">
-          <span className="mb-1 block text-sm text-stone-600">密码</span>
+          <span className="mb-1 block text-sm text-slate-600">密码</span>
           <input
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            className="w-full rounded-md border border-stone-300 bg-white px-3 py-3 outline-none focus:border-emerald-600"
+            className="h-12 w-full rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-100"
             type="password"
             autoComplete="current-password"
           />
@@ -55,7 +56,7 @@ export default function LoginForm() {
         <button
           type="submit"
           disabled={loading}
-          className="flex w-full items-center justify-center gap-2 rounded-md bg-emerald-700 px-4 py-3 font-semibold text-white disabled:opacity-60"
+          className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-600 px-4 font-semibold text-white transition hover:bg-fuchsia-700 disabled:opacity-60"
         >
           <LogIn size={18} />
           {loading ? "登录中" : "登录"}

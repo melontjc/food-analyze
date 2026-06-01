@@ -13,6 +13,7 @@ const mealAnalysisSchema = z.object({
     z.object({
       name: z.string().min(1),
       portion: z.string().optional().nullable(),
+      grams: z.number().positive().optional().nullable(),
       kcal: z.number().int().nonnegative(),
       confidence: z.number().min(0).max(1).optional().nullable()
     })
@@ -24,6 +25,7 @@ const mealAnalysisSchema = z.object({
 });
 
 export type MealAnalysis = z.infer<typeof mealAnalysisSchema>;
+type NutritionSourceHint = { name: string; kcalPer100g: number };
 
 const nutritionLabelSchema = z.object({
   name: z.string().min(1),
@@ -54,13 +56,18 @@ const presetRecalculationSchema = z.object({
 export type NutritionLabelAnalysis = z.infer<typeof nutritionLabelSchema>;
 export type PresetRecalculation = z.infer<typeof presetRecalculationSchema>;
 
-export async function analyzeMealImage(imageDataUrl: string, userDescription?: string | null): Promise<MealAnalysis> {
+export async function analyzeMealImage(
+  imageDataUrl: string,
+  userDescription?: string | null,
+  nutritionSources: NutritionSourceHint[] = []
+): Promise<MealAnalysis> {
   const description = userDescription?.trim();
+  const nutritionLibrary = nutritionLibraryPrompt(nutritionSources);
   const payload = {
     model: optionalEnv("OPENAI_MODEL") || "gpt-4.1-mini",
     max_output_tokens: 900,
     instructions:
-      "你是谨慎的餐食热量估算助手。结合图片和用户补充说明估算热量；用户说明包含重量、烹饪手法、店铺、规格时优先使用。不要假装精确，不确定时降低 confidence 并在 uncertainty 中说明。返回严格 JSON，不要 Markdown。",
+      "你是谨慎的餐食热量估算助手。结合图片和用户补充说明识别每一种食物，估算实际可食用重量和热量；用户说明包含重量、烹饪手法、店铺、规格时优先使用。不要假装精确，不确定时降低 confidence 并在 uncertainty 中说明。返回严格 JSON，不要 Markdown。",
     input: [
       {
         role: "user",
@@ -70,9 +77,10 @@ export async function analyzeMealImage(imageDataUrl: string, userDescription?: s
             text: [
               "请识别这张餐食图片，拆分食物项并估算热量。",
               description ? `用户补充说明：${description}` : "用户没有补充重量、做法或店铺信息。",
-              "如果补充说明里有克数、份量、烹饪手法，按这些信息修正热量。",
+              "每个食物项都要识别具体种类，并输出 grams 表示估测的实际可食用克数。用户写了克数时优先使用用户克数；只能根据图片目测时给出合理估测并降低置信度。",
+              nutritionLibrary,
               "如果补充说明里有耳熟能详的连锁店和具体菜品/规格，可以结合常见标准化配方估算，但要在 notes 或 uncertainty 中说明这是标准化估算，门店、地区、加料、酱料会造成偏差。",
-              "JSON schema: {\"items\":[{\"name\":\"string\",\"portion\":\"string\",\"kcal\":number,\"confidence\":0-1}],\"total_kcal\":number,\"confidence\":0-1,\"uncertainty\":\"string\",\"notes\":\"string\"}。"
+              "JSON schema: {\"items\":[{\"name\":\"string\",\"portion\":\"string\",\"grams\":number,\"kcal\":number,\"confidence\":0-1}],\"total_kcal\":number,\"confidence\":0-1,\"uncertainty\":\"string\",\"notes\":\"string\"}。"
             ].join("\n")
           },
           { type: "input_image", image_url: imageDataUrl }
@@ -87,13 +95,14 @@ export async function analyzeMealImage(imageDataUrl: string, userDescription?: s
   return mealAnalysisSchema.parse(json);
 }
 
-export async function analyzeMealText(userDescription: string): Promise<MealAnalysis> {
+export async function analyzeMealText(userDescription: string, nutritionSources: NutritionSourceHint[] = []): Promise<MealAnalysis> {
   const description = userDescription.trim();
+  const nutritionLibrary = nutritionLibraryPrompt(nutritionSources);
   const payload = {
     model: optionalEnv("OPENAI_MODEL") || "gpt-4.1-mini",
     max_output_tokens: 900,
     instructions:
-      "你是谨慎的餐食热量估算助手。只根据用户的文字描述估算热量；描述包含重量、烹饪手法、店铺、规格时优先使用。不要假装精确，不确定时降低 confidence 并在 uncertainty 中说明。返回严格 JSON，不要 Markdown。",
+      "你是谨慎的餐食热量估算助手。只根据用户的文字描述识别每一种食物，估算实际可食用重量和热量；描述包含重量、烹饪手法、店铺、规格时优先使用。不要假装精确，不确定时降低 confidence 并在 uncertainty 中说明。返回严格 JSON，不要 Markdown。",
     input: [
       {
         role: "user",
@@ -103,10 +112,11 @@ export async function analyzeMealText(userDescription: string): Promise<MealAnal
             text: [
               "请根据下面的餐食文字描述，拆分食物项并估算热量。",
               `用户描述：${description}`,
-              "如果描述里有克数、份量、烹饪手法，按这些信息估算热量。",
+              "每个食物项都要识别具体种类，并输出 grams 表示估测的实际可食用克数。用户写了克数时优先使用用户克数；缺少克数时按常见份量估测并降低置信度。",
+              nutritionLibrary,
               "如果描述里有耳熟能详的连锁店和具体菜品/规格，可以结合常见标准化配方估算，但要在 notes 或 uncertainty 中说明这是标准化估算，门店、地区、加料、酱料会造成偏差。",
               "如果缺少重量或关键做法，基于常见份量给出保守估算，并明确说明不确定项。",
-              "JSON schema: {\"items\":[{\"name\":\"string\",\"portion\":\"string\",\"kcal\":number,\"confidence\":0-1}],\"total_kcal\":number,\"confidence\":0-1,\"uncertainty\":\"string\",\"notes\":\"string\"}。"
+              "JSON schema: {\"items\":[{\"name\":\"string\",\"portion\":\"string\",\"grams\":number,\"kcal\":number,\"confidence\":0-1}],\"total_kcal\":number,\"confidence\":0-1,\"uncertainty\":\"string\",\"notes\":\"string\"}。"
             ].join("\n")
           }
         ]
@@ -118,6 +128,14 @@ export async function analyzeMealText(userDescription: string): Promise<MealAnal
   const text = extractResponseText(data);
   const json = parseJson(text);
   return mealAnalysisSchema.parse(json);
+}
+
+function nutritionLibraryPrompt(nutritionSources: NutritionSourceHint[]) {
+  if (!nutritionSources.length) return "个人营养库暂无可匹配食品。";
+  return [
+    "下面是用户个人营养库中的食品候选。只有图片或文字明确对应时，才将 name 原样返回为营养库名称；无法明确判断品牌或食品时，不要强行匹配。",
+    JSON.stringify(nutritionSources)
+  ].join("\n");
 }
 
 export async function analyzeNutritionLabel(imageDataUrl: string, suggestedName?: string | null): Promise<NutritionLabelAnalysis> {

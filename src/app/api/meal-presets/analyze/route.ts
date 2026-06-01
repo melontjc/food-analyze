@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
         items: analysis.items.map((item) => ({
           name: normalizeMealText(item.name) || "食物",
           portion: normalizeMealText(item.portion),
-          defaultGrams: null,
+          defaultGrams: item.grams ?? null,
           kcal: item.kcal,
           confidence: item.confidence ?? null,
           calculationSource: "ai_estimate",
