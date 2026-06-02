@@ -155,6 +155,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   const [loading, setLoading] = useState(false);
   const [analysisPhase, setAnalysisPhase] = useState<AnalysisPhase>("idle");
   const [analysisTimings, setAnalysisTimings] = useState<MealAnalysisTimings | null>(null);
+  const [analysisDraftId, setAnalysisDraftId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [presetSavingId, setPresetSavingId] = useState<string | null>(null);
   const [presetAddingId, setPresetAddingId] = useState<string | null>(null);
@@ -237,8 +238,11 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
 
   function chooseFile(file: File) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+    if (draft) setAnalysisDraftId(draft.id);
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
+    setDraft(null);
+    setAnalysisTimings(null);
     setError("");
   }
 
@@ -269,9 +273,10 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     }
     form.append("dateKey", dateKey);
     form.append("userDescription", description);
+    if (analysisDraftId) form.append("draftId", analysisDraftId);
 
     let response: Response;
-    let data: { entry?: MealEntry; error?: string; timings?: MealAnalysisTimings };
+    let data: { entry?: MealEntry; error?: string; warning?: string; timings?: MealAnalysisTimings };
     try {
       response = await fetch("/api/meals/analyze", { method: "POST", body: form });
       data = await response.json().catch(() => ({}));
@@ -294,11 +299,10 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
       return;
     }
     setDraft(data.entry);
+    setAnalysisDraftId(data.entry.id);
     setAnalysisTimings(data.timings || null);
     setKcal(String(data.entry.finalKcal || data.entry.modelKcal || ""));
-    setSelectedFile(null);
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(null);
+    setError(data.warning || "");
   }
 
   async function confirmDraft() {
@@ -325,7 +329,11 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     }
 
     setDraft(null);
+    setAnalysisDraftId(null);
     setMealContext("");
+    setSelectedFile(null);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(null);
     await load();
   }
 
@@ -476,8 +484,9 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
                     onPick={() => inputRef.current?.click()}
                     onContext={setMealContext}
                     onAnalyze={analyze}
+                    hasDraft={Boolean(draft || analysisDraftId)}
+                    draftContent={draft ? <DraftCard draft={draft} kcal={kcal} compression={compression} timings={analysisTimings} onKcal={setKcal} onGrams={updateDraftItemGrams} onConfirm={confirmDraft} /> : null}
                   />
-                  {draft ? <DraftCard draft={draft} kcal={kcal} compression={compression} timings={analysisTimings} onKcal={setKcal} onGrams={updateDraftItemGrams} onConfirm={confirmDraft} /> : null}
                 </div>
               </AppTabSection>
             ) : null}
@@ -981,7 +990,9 @@ function UploadPanel({
   onChoose,
   onPick,
   onContext,
-  onAnalyze
+  onAnalyze,
+  hasDraft,
+  draftContent
 }: {
   inputRef: React.RefObject<HTMLInputElement | null>;
   loading: boolean;
@@ -994,6 +1005,8 @@ function UploadPanel({
   onPick: () => void;
   onContext: (value: string) => void;
   onAnalyze: () => void;
+  hasDraft: boolean;
+  draftContent: React.ReactNode;
 }) {
   const canAnalyze = Boolean(selectedFile || mealContext.trim());
 
@@ -1055,6 +1068,8 @@ function UploadPanel({
         )}
       </button>
 
+      {draftContent ? <div className="mt-4">{draftContent}</div> : null}
+
       <label className="mt-4 block">
         <span className="mb-2 block text-sm font-medium text-slate-700">补充说明</span>
         <textarea
@@ -1065,14 +1080,18 @@ function UploadPanel({
           placeholder="例如：红薯 200g，通过空气炸锅烤制；米饭约 180g；麦当劳板烧鸡腿堡一份；海底捞番茄锅里捞出的牛肉约 120g"
         />
       </label>
-      <p className="mt-2 text-xs leading-5 text-slate-500">支持图片加说明，也支持只写文字描述。补充重量、做法或店铺可提高准确度；分析后会先生成草稿，确认 kcal 才计入统计。</p>
+      <p className="mt-2 text-xs leading-5 text-slate-500">
+        {hasDraft
+          ? "识别不准确时，可补充食物名称、重量、做法或店铺，再让 AI 修正草稿。只有确认 kcal 后才会计入统计。"
+          : "支持图片加说明，也支持只写文字描述。补充重量、做法或店铺可提高准确度；分析后会先生成草稿，确认 kcal 才计入统计。"}
+      </p>
       <button
         onClick={onAnalyze}
         disabled={loading || !canAnalyze}
         className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-600 px-5 py-4 text-base font-semibold text-white shadow-sm shadow-fuchsia-600/20 transition hover:bg-fuchsia-700 disabled:cursor-not-allowed disabled:bg-slate-300"
       >
         {loading ? <CloudCog size={19} className="animate-pulse" /> : <Send size={19} />}
-        {loading ? (analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图") : "发送并分析餐食"}
+        {loading ? (analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图") : hasDraft ? "根据说明重新识别" : "发送并分析餐食"}
       </button>
       {error ? <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
     </div>
@@ -1149,7 +1168,7 @@ function DraftCard({
   const draftImageUrl = draft.compressedImageUrl || draft.imageUrl;
 
   return (
-    <div className="panel p-4 sm:p-5">
+    <div className="rounded-lg border border-fuchsia-100 bg-fuchsia-50/40 p-3 sm:p-4">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-amber-600">待确认</p>

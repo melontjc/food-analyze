@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
   const file = form.get("image");
   const date = String(form.get("dateKey") || todayKey());
   const userDescription = String(form.get("userDescription") || "").trim().slice(0, 1000);
+  const draftId = String(form.get("draftId") || "").trim();
   const clientCompressionMs = numberFromForm(form.get("clientCompressionMs"), 60_000);
   const clientOriginalBytes = numberFromForm(form.get("clientOriginalBytes"), 100 * 1024 * 1024);
 
@@ -26,6 +27,13 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const existingDraft = draftId
+      ? await prisma.mealEntry.findFirst({ where: { id: draftId, status: "draft" } })
+      : null;
+    if (draftId && !existingDraft) {
+      return NextResponse.json({ error: "当前草稿已失效，请重新分析" }, { status: 404 });
+    }
+
     const imageFile = file instanceof File ? file : null;
     const serverCompressionStartedAt = Date.now();
     const prepared = imageFile ? await prepareMealImage(imageFile) : null;
@@ -62,6 +70,27 @@ export async function POST(request: NextRequest) {
       const [imageUrl, compressedImageUrl] = await uploadedImagesPromise;
       const storedOriginalBytes = clientOriginalBytes || prepared?.originalBytes;
       const message = error instanceof Error ? error.message : "餐食分析失败";
+      if (existingDraft) {
+        const entry = await prisma.mealEntry.findUnique({
+          where: { id: existingDraft.id },
+          include: { items: { include: { nutritionSource: true } } }
+        });
+        return NextResponse.json(
+          {
+            entry,
+            warning: `${message}。已保留上一次草稿，请稍后重试。`,
+            timings: createTimings({
+              clientCompressionMs,
+              serverCompressionMs,
+              blobUploadMs,
+              openAiMs,
+              databaseMs: 0,
+              totalServerMs: Date.now() - requestStartedAt
+            })
+          },
+          { status: 202 }
+        );
+      }
       const databaseStartedAt = Date.now();
       const entry = await prisma.mealEntry.create({
         data: {
@@ -115,26 +144,36 @@ export async function POST(request: NextRequest) {
       : analysis.total_kcal;
 
     const databaseStartedAt = Date.now();
-    const entry = await prisma.mealEntry.create({
-      data: {
-        dateKey: date,
-        status: "draft",
-        imageUrl,
-        compressedImageUrl,
-        userDescription: userDescription || null,
-        originalBytes: storedOriginalBytes,
-        compressedBytes: prepared?.compressedBytes,
-        modelKcal: adjustedTotalKcal,
-        finalKcal: adjustedTotalKcal,
-        confidence: analysis.confidence ?? null,
-        uncertainty: normalizeMealText(analysis.uncertainty),
-        notes: normalizeMealText(analysis.notes),
-        items: {
-          create: analyzedItems
-        }
-      },
-      include: { items: { include: { nutritionSource: true } } }
-    });
+    const entryData = {
+      dateKey: date,
+      status: "draft",
+      imageUrl,
+      compressedImageUrl,
+      userDescription: userDescription || null,
+      originalBytes: storedOriginalBytes,
+      compressedBytes: prepared?.compressedBytes,
+      modelKcal: adjustedTotalKcal,
+      finalKcal: adjustedTotalKcal,
+      confidence: analysis.confidence ?? null,
+      uncertainty: normalizeMealText(analysis.uncertainty),
+      notes: normalizeMealText(analysis.notes),
+      items: {
+        create: analyzedItems
+      }
+    };
+    const entry = existingDraft
+      ? await prisma.$transaction(async (transaction) => {
+          await transaction.mealItem.deleteMany({ where: { mealEntryId: existingDraft.id } });
+          return transaction.mealEntry.update({
+            where: { id: existingDraft.id },
+            data: entryData,
+            include: { items: { include: { nutritionSource: true } } }
+          });
+        })
+      : await prisma.mealEntry.create({
+          data: entryData,
+          include: { items: { include: { nutritionSource: true } } }
+        });
     const databaseMs = Date.now() - databaseStartedAt;
     const timings = createTimings({
       clientCompressionMs,
