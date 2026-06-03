@@ -149,6 +149,12 @@ type MealAnalysisTimings = {
   databaseMs: number;
   totalServerMs: number;
 };
+type AiInsight = {
+  summaryTitle: string;
+  insights: string[];
+  suggestions: string[];
+  cautions: string[];
+};
 type ConnectionStatus = {
   oura: { connected: boolean; scope: string | null; expiresAt: number | null };
   intervals: { connected: boolean; athleteId: string };
@@ -168,7 +174,7 @@ const ANALYSIS_TABS: Array<{ key: AnalysisView; label: string }> = [
   { key: "correlation", label: "相关性" }
 ];
 const CORRELATION_WINDOW_DAYS = 14;
-const DINNER_TARGET_KCAL = 450;
+const DEFAULT_SLOT_TARGET_KCAL = 450;
 
 export default function DashboardTailAdminClient({ initialDate }: { initialDate: string }) {
   const [dateKey, setDateKey] = useState(initialDate);
@@ -1379,7 +1385,7 @@ function CorrelationAnalysis({ summary }: { summary: AnalysisSummary }) {
         <div className="analysis-card-header">
           <div>
             <p>Relationship Map</p>
-            <h2>摄入、热量缺口与体重变化关系</h2>
+            <h2>{summary.primarySignalTitle}</h2>
           </div>
           <span>近 {CORRELATION_WINDOW_DAYS} 天</span>
         </div>
@@ -1389,7 +1395,7 @@ function CorrelationAnalysis({ summary }: { summary: AnalysisSummary }) {
           <div className="analysis-empty-card">
             <Database size={24} />
             <strong>记录满 7 天后生成洞察</strong>
-            <p>需要至少 5 个有效的晚餐与次日体重记录，才能计算个人相关性。</p>
+            <p>每个餐别至少需要 5 组有效的餐别热量与次日体重记录，才能参与自动发现。</p>
           </div>
         )}
       </section>
@@ -1402,14 +1408,14 @@ function CorrelationAnalysis({ summary }: { summary: AnalysisSummary }) {
         </div>
         <div>
           <p><Lightbulb size={15} /> 建议</p>
-          <strong>晚餐控制在 {DINNER_TARGET_KCAL} kcal 内</strong>
+          <strong>{summary.recommendationTitle}</strong>
           <span>{summary.recommendation}</span>
         </div>
       </section>
 
       <div className="analysis-mini-grid">
         <AnalysisMiniCard icon={<Utensils size={19} />} title="早餐稳定度" value={percentMetric(summary.breakfastVariation)} status={summary.breakfastStatus} accent="sage" />
-        <AnalysisMiniCard icon={<Flame size={19} />} title="晚餐波动" value={percentMetric(summary.dinnerVariation)} status={summary.dinnerStatus} accent="coral" />
+        <AnalysisMiniCard icon={<Flame size={19} />} title={`${summary.primarySlotLabel}波动`} value={percentMetric(summary.primarySlotVariation)} status={summary.primarySlotStatus} accent="coral" />
         <AnalysisMiniCard icon={<Target size={19} />} title="缺口达标率" value={percentMetric(summary.deficitRate)} status={summary.deficitStatus} accent="sage" />
       </div>
 
@@ -1463,17 +1469,17 @@ function MealSlotAnalysis({ summary }: { summary: AnalysisSummary }) {
     <section className="analysis-card">
       <div className="analysis-card-header">
         <div>
-          <p>Meal Slot Summary</p>
-          <h2>餐别结构摘要</h2>
+          <p>Meal Slot Ranking</p>
+          <h2>餐别相关性排序</h2>
         </div>
         <span>近 14 天</span>
       </div>
       <div className="analysis-slot-list">
-        {summary.slotAverages.map((slot) => (
-          <div key={slot.key} className="analysis-slot-row">
+        {summary.slotCorrelations.map((slot) => (
+          <div key={slot.slot} className="analysis-slot-row">
             <span>{slot.label}</span>
-            <div><i style={{ width: `${Math.min(100, slot.share * 100)}%` }} /></div>
-            <strong>{slot.averageKcal ? `${Math.round(slot.averageKcal)} kcal` : "--"}</strong>
+            <div><i style={{ width: `${Math.round(slot.absCorrelation * 100)}%` }} /></div>
+            <strong>{slot.eligible && slot.correlation != null ? slot.correlation.toFixed(2) : "样本不足"}</strong>
           </div>
         ))}
       </div>
@@ -1489,12 +1495,14 @@ function CorrelationChart({ summary }: { summary: AnalysisSummary }) {
   const chartH = height - padding.top - padding.bottom;
   const days = summary.recentDays;
   const x = (index: number) => padding.left + (days.length <= 1 ? chartW / 2 : (chartW / (days.length - 1)) * index);
-  const maxKcal = niceCeil(Math.max(800, ...days.map((day) => day.intakeKcal || 0), ...days.map((day) => Math.max(0, day.deficitKcal || 0))));
+  const primarySlot = summary.primarySignal?.slot || "dinner";
+  const primarySlotKcal = days.map((day) => mealSlotKcal(day, primarySlot));
+  const maxKcal = niceCeil(Math.max(800, ...primarySlotKcal, ...days.map((day) => Math.max(0, day.deficitKcal || 0))));
   const yKcal = (value: number) => padding.top + ((maxKcal - value) / maxKcal) * chartH;
   const deltas = days.map((day) => dailyWeightDelta(day)).filter((value): value is number => value != null);
   const maxAbsDelta = Math.max(0.3, ...deltas.map((value) => Math.abs(value)));
   const yDelta = (value: number) => padding.top + ((maxAbsDelta - value) / (maxAbsDelta * 2)) * chartH;
-  const intakePoints = days.map((day, index) => `${x(index)},${yKcal(day.intakeKcal || 0)}`).join(" ");
+  const intakePoints = primarySlotKcal.map((value, index) => `${x(index)},${yKcal(value || 0)}`).join(" ");
   const deficitPoints = days.map((day, index) => `${x(index)},${yKcal(Math.max(0, day.deficitKcal || 0))}`).join(" ");
   const highlight = summary.strongestPair;
   const highlightX = highlight == null ? null : x(days.findIndex((day) => day.dateKey === highlight.dateKey));
@@ -1502,7 +1510,7 @@ function CorrelationChart({ summary }: { summary: AnalysisSummary }) {
   return (
     <div className="analysis-chart-wrap">
       <div className="analysis-legend">
-        <span><i className="analysis-dot analysis-dot-coral" />摄入热量</span>
+        <span><i className="analysis-dot analysis-dot-coral" />{summary.primarySlotLabel}热量</span>
         <span><i className="analysis-dot analysis-dot-sage" />热量缺口</span>
         <span><i className="analysis-dot analysis-dot-oat" />体重变化</span>
       </div>
@@ -1526,7 +1534,7 @@ function CorrelationChart({ summary }: { summary: AnalysisSummary }) {
           <g>
             <line x1={highlightX} x2={highlightX} y1={padding.top + 24} y2={height - padding.bottom} stroke="#dfcbb6" strokeDasharray="6 8" />
             <foreignObject x={Math.min(width - 246, Math.max(76, highlightX - 112))} y="36" width="224" height="58">
-              <div className="analysis-chart-callout">晚餐热量升高时，次日体重波动更明显</div>
+              <div className="analysis-chart-callout">{summary.chartCallout}</div>
             </foreignObject>
           </g>
         ) : null}
@@ -1552,102 +1560,282 @@ function AnalysisMiniCard({ icon, title, value, status, accent }: { icon: React.
 }
 
 function InsightPanel({ summary }: { summary: AnalysisSummary }) {
+  const [aiInsight, setAiInsight] = useState<AiInsight | null>(null);
+  const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "ready" | "cached" | "error">("idle");
+
+  useEffect(() => {
+    if (!summary.aiPayload || summary.validCorrelationPoints < 5) {
+      void Promise.resolve().then(() => {
+        setAiInsight(null);
+        setAiStatus("idle");
+      });
+      return;
+    }
+
+    let cancelled = false;
+    const cacheKey = `tracker-ai-insight:${summary.dateKey}:${summary.analysisFingerprint}`;
+
+    void (async () => {
+      await Promise.resolve();
+      try {
+        const cached = window.localStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached) as AiInsight;
+          if (!cancelled) {
+            setAiInsight(parsed);
+            setAiStatus("cached");
+          }
+          return;
+        }
+      } catch {
+        // Ignore cache parsing issues and request a fresh explanation.
+      }
+
+      if (cancelled) return;
+      setAiStatus("loading");
+      setAiInsight(null);
+      fetch("/api/analysis/insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(summary.aiPayload)
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error("AI 数据解读失败");
+          return response.json() as Promise<{ insight: AiInsight }>;
+        })
+        .then((data) => {
+          if (cancelled) return;
+          setAiInsight(data.insight);
+          setAiStatus("ready");
+          try {
+            window.localStorage.setItem(cacheKey, JSON.stringify(data.insight));
+          } catch {
+            // Cache is an optimization only.
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setAiStatus("error");
+        });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [summary.aiPayload, summary.analysisFingerprint, summary.dateKey, summary.validCorrelationPoints]);
+
+  const insights = aiInsight?.insights?.length ? aiInsight.insights : summary.insights;
+  const suggestions = aiInsight?.suggestions || [];
+  const cautions = aiInsight?.cautions || [];
+
   return (
     <section className="analysis-insight-card">
       <div className="analysis-insight-title">
         <Leaf size={22} />
         <div>
-          <p>Insight 洞察</p>
-          <h2>数据解读</h2>
+          <p>{aiInsight?.summaryTitle || "Insight 洞察"}</p>
+          <h2>{aiStatus === "loading" ? "正在生成 AI 数据解读" : aiStatus === "ready" || aiStatus === "cached" ? "AI 数据解读" : "本地数据解读"}</h2>
         </div>
       </div>
       <div className="analysis-insight-list">
-        {summary.insights.map((insight) => (
+        {aiStatus === "loading" ? <p>我正在结合四餐相关性排名、体重变化和缺口达标率生成更自然的解释。</p> : null}
+        {insights.map((insight) => (
           <p key={insight}>{insight}</p>
         ))}
+        {suggestions.map((suggestion) => (
+          <p key={suggestion} className="analysis-insight-suggestion">建议：{suggestion}</p>
+        ))}
+        {cautions.map((caution) => (
+          <p key={caution} className="analysis-insight-caution">提示：{caution}</p>
+        ))}
+        {aiStatus === "error" ? <p className="analysis-insight-caution">AI 解读暂时不可用，已保留本地算法洞察。</p> : null}
       </div>
     </section>
   );
 }
 
 type AnalysisSourceDay = DashboardDay & { meals?: MealEntry[] };
+type SlotWeightPair = { dateKey: string; slotKcal: number; nextWeightDeltaKg: number };
+type SlotCorrelationSummary = {
+  slot: MealSlot;
+  label: string;
+  pairs: SlotWeightPair[];
+  sampleSize: number;
+  correlation: number | null;
+  absCorrelation: number;
+  eligible: boolean;
+  meaningful: boolean;
+  strengthLabel: string;
+  averageKcal: number;
+  variation: number | null;
+  strongestPair: SlotWeightPair | null;
+  recommendation: string;
+};
 type AnalysisSummary = ReturnType<typeof buildAnalysisSummary>;
 
 function buildAnalysisSummary(dashboard: Dashboard | null) {
   const sourceDays: AnalysisSourceDay[] = (dashboard?.analysisDays?.length ? dashboard.analysisDays : dashboard?.days || []).slice();
   const recentDays = sourceDays.slice(-CORRELATION_WINDOW_DAYS);
   const target = dashboard?.dailyDeficitTargetKcal || 500;
-  const correlationPairs = buildDinnerWeightPairs(recentDays);
-  const correlation = correlationPairs.length >= 2 ? pearsonCorrelation(correlationPairs.map((pair) => pair.dinnerKcal), correlationPairs.map((pair) => pair.nextWeightDeltaKg)) : null;
-  const strongestPair = correlationPairs.reduce<(typeof correlationPairs)[number] | null>((current, pair) => {
-    if (!current) return pair;
-    return Math.abs(pair.nextWeightDeltaKg) > Math.abs(current.nextWeightDeltaKg) ? pair : current;
-  }, null);
+  const slotCorrelations = MEAL_SLOTS.map((slot) => buildSlotCorrelation(recentDays, slot.key, slot.label))
+    .sort((a, b) => Number(b.eligible) - Number(a.eligible) || b.absCorrelation - a.absCorrelation || b.sampleSize - a.sampleSize);
+  const primarySignal = slotCorrelations.find((slot) => slot.eligible) || null;
+  const displaySignal = primarySignal || slotCorrelations[0] || null;
   const breakfastValues = recentDays.map((day) => mealSlotKcal(day, "breakfast")).filter((value) => value > 0);
-  const dinnerValues = recentDays.map((day) => mealSlotKcal(day, "dinner")).filter((value) => value > 0);
   const deficitValues = recentDays.map((day) => day.deficitKcal).filter((value): value is number => value != null);
   const weightValues = recentDays.map((day) => day.weightKg).filter((value): value is number => value != null);
   const breakfastVariation = coefficientOfVariation(breakfastValues);
-  const dinnerVariation = coefficientOfVariation(dinnerValues);
   const deficitRate = deficitValues.length ? deficitValues.filter((value) => value >= target).length / deficitValues.length : null;
   const averageIntakeKcal = recentDays.length ? recentDays.reduce((total, day) => total + (day.intakeKcal || 0), 0) / recentDays.length : null;
-  const slotAverages = MEAL_SLOTS.map((slot) => {
-    const values = recentDays.map((day) => mealSlotKcal(day, slot.key)).filter((value) => value > 0);
-    const averageKcal = values.length ? values.reduce((total, value) => total + value, 0) / values.length : 0;
-    return {
-      key: slot.key,
-      label: slot.label,
-      averageKcal,
-      share: averageKcal / Math.max(1, ...MEAL_SLOTS.map((candidate) => {
-        const candidateValues = recentDays.map((day) => mealSlotKcal(day, candidate.key)).filter((value) => value > 0);
-        return candidateValues.length ? candidateValues.reduce((total, value) => total + value, 0) / candidateValues.length : 0;
-      }))
-    };
-  });
-  const correlationLabel = correlation == null || correlationPairs.length < 5 ? "等待更多记录" : correlationStrengthLabel(correlation);
-  const recommendation =
-    dinnerVariation != null && dinnerVariation > 0.25
-      ? "晚餐波动偏高，先稳定晚餐结构比继续压低早餐更有效。"
-      : "晚餐结构相对稳定，继续保持当前节奏。";
+  const correlation = primarySignal?.correlation ?? null;
+  const correlationLabel = primarySignal == null ? "等待更多记录" : primarySignal.strengthLabel;
+  const primarySignalTitle = primarySignal == null
+    ? "继续记录，自动发现规律"
+    : primarySignal.meaningful
+      ? `${primarySignal.label}热量与次日体重变化最相关`
+      : "暂未发现明显规律";
+  const recommendationTitle = primarySignal?.meaningful ? `优先稳定${primarySignal.label}` : "继续积累数据";
+  const recommendation = primarySignal?.recommendation || "四个餐别暂时没有足够强的个人规律，先保持完整记录和固定称重时间。";
+  const primarySlotLabel = displaySignal?.label || "餐别";
+  const primarySlotVariation = displaySignal?.variation ?? null;
+  const primarySlotStatus = variationStatus(primarySlotVariation, primarySlotLabel);
+  const chartCallout = primarySignal?.meaningful
+    ? `${primarySignal.label}热量变化时，次日体重波动更值得观察`
+    : "当前相关性较弱，继续记录会让判断更可靠";
   const insights = buildInsightMessages({
-    correlation,
-    validCorrelationPoints: correlationPairs.length,
+    primarySignal,
+    validCorrelationPoints: primarySignal?.sampleSize ?? displaySignal?.sampleSize ?? 0,
     breakfastVariation,
-    dinnerVariation,
     deficitRate
   });
+  const analysisFingerprint = hashString(JSON.stringify({
+    dateKey: dashboard?.dateKey || "",
+    target,
+    slots: slotCorrelations.map(({ slot, sampleSize, correlation, averageKcal, variation }) => ({ slot, sampleSize, correlation, averageKcal, variation })),
+    days: recentDays.map((day) => ({
+      dateKey: day.dateKey,
+      intakeKcal: day.intakeKcal,
+      deficitKcal: day.deficitKcal,
+      weightKg: day.weightKg,
+      slots: Object.fromEntries(MEAL_SLOTS.map((slot) => [slot.key, mealSlotKcal(day, slot.key)]))
+    }))
+  }));
+  const aiPayload = dashboard?.dateKey
+    ? {
+        dateKey: dashboard.dateKey,
+        fingerprint: analysisFingerprint,
+        primarySignal: primarySignal
+          ? {
+              slot: primarySignal.slot,
+              label: primarySignal.label,
+              correlation: primarySignal.correlation,
+              absCorrelation: primarySignal.absCorrelation,
+              sampleSize: primarySignal.sampleSize,
+              strengthLabel: primarySignal.strengthLabel,
+              meaningful: primarySignal.meaningful,
+              recommendation: primarySignal.recommendation
+            }
+          : null,
+        slotCorrelations: slotCorrelations.map(({ slot, label, correlation, absCorrelation, sampleSize, eligible, strengthLabel, averageKcal, variation }) => ({
+          slot,
+          label,
+          correlation,
+          absCorrelation,
+          sampleSize,
+          eligible,
+          strengthLabel,
+          averageKcal,
+          variation
+        })),
+        metrics: {
+          deficitRate,
+          breakfastVariation,
+          primarySlotVariation,
+          averageIntakeKcal,
+          weightChangeText: weightChangeText(weightValues),
+          weightRecordCount: weightValues.length,
+          dailyDeficitTargetKcal: target
+        },
+        recentDays: recentDays.map((day) => ({
+          dateKey: day.dateKey,
+          intakeKcal: day.intakeKcal,
+          deficitKcal: day.deficitKcal,
+          weightKg: day.weightKg,
+          weightDeltaKg: dailyWeightDelta(day),
+          slots: Object.fromEntries(MEAL_SLOTS.map((slot) => [slot.key, mealSlotKcal(day, slot.key)]))
+        }))
+      }
+    : null;
 
   return {
+    dateKey: dashboard?.dateKey || "unknown",
     recentDays,
     correlation,
-    validCorrelationPoints: correlationPairs.length,
-    strongestPair,
+    validCorrelationPoints: primarySignal?.sampleSize ?? displaySignal?.sampleSize ?? 0,
+    strongestPair: primarySignal?.strongestPair ?? null,
+    primarySignal,
+    primarySignalTitle,
+    primarySlotLabel,
+    primarySlotVariation,
+    primarySlotStatus,
+    chartCallout,
+    recommendationTitle,
     breakfastVariation,
-    dinnerVariation,
     deficitRate,
     averageIntakeKcal,
     weightRecordCount: weightValues.length,
     weightChangeText: weightChangeText(weightValues),
     breakfastStatus: variationStatus(breakfastVariation, "早餐"),
-    dinnerStatus: variationStatus(dinnerVariation, "晚餐"),
     deficitStatus: deficitRateStatus(deficitRate),
     correlationLabel,
     recommendation,
     insights,
-    slotAverages
+    slotCorrelations,
+    analysisFingerprint,
+    aiPayload
   };
 }
 
-function buildDinnerWeightPairs(days: AnalysisSourceDay[]) {
-  const pairs: Array<{ dateKey: string; dinnerKcal: number; nextWeightDeltaKg: number }> = [];
+function buildSlotCorrelation(days: AnalysisSourceDay[], slot: MealSlot, label: string): SlotCorrelationSummary {
+  const pairs = buildSlotWeightPairs(days, slot);
+  const values = days.map((day) => mealSlotKcal(day, slot)).filter((value) => value > 0);
+  const correlation = pairs.length >= 2 ? pearsonCorrelation(pairs.map((pair) => pair.slotKcal), pairs.map((pair) => pair.nextWeightDeltaKg)) : null;
+  const absCorrelation = correlation == null ? 0 : Math.abs(correlation);
+  const sampleSize = pairs.length;
+  const eligible = sampleSize >= 5;
+  const meaningful = eligible && absCorrelation >= 0.35;
+  const averageKcal = values.length ? values.reduce((total, value) => total + value, 0) / values.length : 0;
+  const variation = coefficientOfVariation(values);
+  const strongestPair = pairs.reduce<SlotWeightPair | null>((current, pair) => {
+    if (!current) return pair;
+    return Math.abs(pair.nextWeightDeltaKg) > Math.abs(current.nextWeightDeltaKg) ? pair : current;
+  }, null);
+  return {
+    slot,
+    label,
+    pairs,
+    sampleSize,
+    correlation,
+    absCorrelation,
+    eligible,
+    meaningful,
+    strengthLabel: eligible && correlation != null ? correlationStrengthLabel(correlation) : "样本不足",
+    averageKcal,
+    variation,
+    strongestPair,
+    recommendation: slotRecommendation(label, correlation, averageKcal, meaningful)
+  };
+}
+
+function buildSlotWeightPairs(days: AnalysisSourceDay[], slot: MealSlot) {
+  const pairs: SlotWeightPair[] = [];
   for (let index = 0; index < days.length - 1; index += 1) {
     const day = days[index];
     const next = days[index + 1];
-    const dinnerKcal = mealSlotKcal(day, "dinner");
-    if (dinnerKcal <= 0 || day.weightKg == null || next.weightKg == null) continue;
+    const slotKcal = mealSlotKcal(day, slot);
+    if (slotKcal <= 0 || day.weightKg == null || next.weightKg == null) continue;
     pairs.push({
       dateKey: day.dateKey,
-      dinnerKcal,
+      slotKcal,
       nextWeightDeltaKg: Number((next.weightKg - day.weightKg).toFixed(2))
     });
   }
@@ -1658,6 +1846,17 @@ function mealSlotKcal(day: AnalysisSourceDay, slot: MealSlot) {
   return (day.meals || [])
     .filter((meal) => meal.mealSlot === slot)
     .reduce((total, meal) => total + (meal.finalKcal || 0), 0);
+}
+
+function slotRecommendation(label: string, correlation: number | null, averageKcal: number, meaningful: boolean) {
+  if (!meaningful || correlation == null) {
+    return `${label}还没有形成足够强的信号，继续记录 7-14 天会更可靠。`;
+  }
+  const target = Math.max(80, Math.round(Math.min(averageKcal, averageKcal * 0.92 || DEFAULT_SLOT_TARGET_KCAL) / 10) * 10);
+  if (correlation > 0) {
+    return `${label}热量越高时，次日体重波动越明显。先把${label}稳定在约 ${target} kcal 附近。`;
+  }
+  return `${label}热量与次日体重呈负相关，但这不代表应该增加热量；建议先观察结构、盐分和称重时间。`;
 }
 
 function dailyWeightDelta(day: AnalysisSourceDay) {
@@ -1717,28 +1916,27 @@ function weightChangeText(values: number[]) {
 }
 
 function buildInsightMessages({
-  correlation,
+  primarySignal,
   validCorrelationPoints,
   breakfastVariation,
-  dinnerVariation,
   deficitRate
 }: {
-  correlation: number | null;
+  primarySignal: SlotCorrelationSummary | null;
   validCorrelationPoints: number;
   breakfastVariation: number | null;
-  dinnerVariation: number | null;
   deficitRate: number | null;
 }) {
   if (validCorrelationPoints < 5) {
-    return ["记录满 7 天并持续录入体重后，我会开始分析晚餐与次日体重波动的关系。", "当前先保持每日餐别记录完整，尤其是晚餐与体重记录。"];
+    return ["记录满 7 天并持续录入体重后，我会自动比较早餐、午餐、晚餐和加餐的相关性。", "当前先保持每日餐别记录完整，尤其是加餐、晚餐和次日体重记录。"];
   }
   const messages: string[] = [];
-  if (correlation != null && correlation >= 0.65) {
-    messages.push("晚餐热量升高时，次日体重波动更明显，优先把晚餐控制在 450 kcal 内。");
-  } else if (correlation != null && Math.abs(correlation) >= 0.35) {
-    messages.push("晚餐热量与次日体重有一定关联，可以继续观察晚餐结构和盐分摄入。");
+  if (primarySignal?.meaningful && primarySignal.correlation != null) {
+    messages.push(`${primarySignal.label}是当前四个餐别里最明显的信号，相关指数 ${primarySignal.absCorrelation.toFixed(2)}。`);
+    messages.push(primarySignal.recommendation);
+  } else if (primarySignal) {
+    messages.push(`四个餐别都已参与计算，目前最强的是${primarySignal.label}，但仍属于弱相关。`);
   } else {
-    messages.push("晚餐与次日体重暂未出现强关联，体重变化可能更多来自水分、运动或同步数据波动。");
+    messages.push("四个餐别暂未出现足够可靠的相关性，体重变化可能更多来自水分、运动或同步数据波动。");
   }
   if (deficitRate != null && deficitRate >= 0.7) {
     messages.push("本阶段缺口达标率良好，执行节奏比较稳定。");
@@ -1747,10 +1945,18 @@ function buildInsightMessages({
   }
   if (breakfastVariation != null && breakfastVariation < 0.16) {
     messages.push("早餐结构稳定，这是全天摄入更容易受控的好信号。");
-  } else if (dinnerVariation != null && dinnerVariation > 0.28) {
-    messages.push("晚餐波动偏高，建议固定一个高蛋白低碳水模板作为默认晚餐。");
+  } else if (primarySignal?.variation != null && primarySignal.variation > 0.28) {
+    messages.push(`${primarySignal.label}波动偏高，可以先固定一个常用模板，再观察相关性是否下降。`);
   }
   return messages;
+}
+
+function hashString(value: string) {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return (hash >>> 0).toString(36);
 }
 
 function QuickPresetsCard({

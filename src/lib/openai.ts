@@ -53,8 +53,24 @@ const presetRecalculationSchema = z.object({
   notes: z.string().optional().nullable()
 });
 
+const dashboardInsightSchema = z.object({
+  summaryTitle: z.string().min(1),
+  insights: z.array(z.string().min(1)).min(1).max(4),
+  suggestions: z.array(z.string().min(1)).min(1).max(3),
+  cautions: z.array(z.string().min(1)).max(3).default([])
+});
+
 export type NutritionLabelAnalysis = z.infer<typeof nutritionLabelSchema>;
 export type PresetRecalculation = z.infer<typeof presetRecalculationSchema>;
+export type DashboardInsight = z.infer<typeof dashboardInsightSchema>;
+export type DashboardInsightInput = {
+  dateKey: string;
+  fingerprint: string;
+  primarySignal: unknown;
+  slotCorrelations: unknown[];
+  metrics: Record<string, unknown>;
+  recentDays: unknown[];
+};
 
 export async function analyzeMealImage(
   imageDataUrl: string,
@@ -201,6 +217,38 @@ export async function recalculatePresetItems(
 
   const data = await postOpenAi(payload);
   return presetRecalculationSchema.parse(parseJson(extractResponseText(data)));
+}
+
+export async function analyzeDashboardInsight(input: DashboardInsightInput): Promise<DashboardInsight> {
+  const payload = {
+    model: optionalEnv("OPENAI_MODEL") || "gpt-4.1-mini",
+    max_output_tokens: 850,
+    instructions:
+      "你是谨慎的健康数据解读助手。你只解释用户传入的算法指标，不重新计算相关系数，不编造不存在的数据，不做医疗诊断。短期体重波动可能来自水分、盐分、糖原、睡眠或同步误差，不能等同于脂肪变化。请用温和、具体、可执行的中文建议。返回严格 JSON，不要 Markdown。",
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: [
+              "请根据下面的算法结果生成分析页洞察。",
+              "规则：",
+              "1. 必须基于 primarySignal 和 slotCorrelations，不要自行发明新的相关性。",
+              "2. 如果 primarySignal 表示弱相关或样本不足，要明确说明继续记录，不要给过度确定的建议。",
+              "3. suggestions 要优先给 1-3 条饮食记录或调整建议。",
+              "4. cautions 用于提醒相关性不代表因果、体重短期波动不等于脂肪变化等。",
+              "JSON schema: {\"summaryTitle\":\"string\",\"insights\":[\"string\"],\"suggestions\":[\"string\"],\"cautions\":[\"string\"]}。",
+              JSON.stringify(input)
+            ].join("\n")
+          }
+        ]
+      }
+    ]
+  };
+
+  const data = await postOpenAi(payload);
+  return dashboardInsightSchema.parse(parseJson(extractResponseText(data)));
 }
 
 async function postOpenAi(payload: unknown) {

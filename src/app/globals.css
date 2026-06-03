@@ -1224,6 +1224,7 @@ textarea {
 
 .analysis-score-card > div {
   min-width: 0;
+  overflow: hidden;
   padding: 0.9rem;
 }
 
@@ -1247,6 +1248,7 @@ textarea {
   font-size: 1.08rem;
   font-weight: 760;
   line-height: 1.32;
+  overflow-wrap: anywhere;
 }
 
 .analysis-score-card > div:first-child strong {
@@ -1264,6 +1266,7 @@ textarea {
   color: #7c8580;
   font-size: 0.74rem;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .analysis-mini-grid {
@@ -1431,6 +1434,17 @@ textarea {
   color: #46544b;
   font-size: 0.8rem;
   line-height: 1.55;
+}
+
+.analysis-insight-list .analysis-insight-suggestion {
+  background: rgba(244, 231, 216, 0.72);
+  color: #8e5f45;
+}
+
+.analysis-insight-list .analysis-insight-caution {
+  background: rgba(230, 238, 229, 0.7);
+  color: #5f6c63;
+  font-size: 0.74rem;
 }
 
 @media (max-width: 380px) {
