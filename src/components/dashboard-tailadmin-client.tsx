@@ -4,10 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import {
-  BarChart3,
   BookmarkPlus,
   Camera,
   Check,
+  ChartPie,
   CircleCheckBig,
   ChevronDown,
   ChevronRight,
@@ -15,15 +15,20 @@ import {
   CloudCog,
   Database,
   FileText,
+  Flame,
   Home,
+  Leaf,
+  Lightbulb,
   Menu,
   Pencil,
   Plus,
   RefreshCw,
   Save,
   Send,
+  Target,
   Trash2,
   Upload,
+  Utensils,
   UserRound,
   Weight,
   X
@@ -101,6 +106,9 @@ type DashboardDay = {
   totalBurnKcal: number | null;
   deficitKcal: number | null;
 };
+type AnalysisDay = DashboardDay & {
+  meals: MealEntry[];
+};
 type WeekSummary = {
   startDateKey: string;
   endDateKey: string;
@@ -120,6 +128,7 @@ type Dashboard = {
     syncedAt: string | null;
   };
   days: DashboardDay[];
+  analysisDays: AnalysisDay[];
   weeks: WeekSummary[];
   weekDeficitKcal: number;
   sevenDayDeficitKcal: number;
@@ -130,6 +139,7 @@ type Dashboard = {
 };
 
 type AppTab = "home" | "quick" | "capture" | "trends" | "more";
+type AnalysisView = "calories" | "weight" | "meals" | "correlation";
 type AnalysisPhase = "idle" | "compressing" | "recognizing";
 type MealAnalysisTimings = {
   clientCompressionMs: number;
@@ -151,6 +161,14 @@ const MEAL_SLOTS: Array<{ key: MealSlot; label: string; time: string; image: str
   { key: "dinner", label: "晚餐", time: "18:30", image: "/illustrations/meal-dinner.png" },
   { key: "snack", label: "加餐", time: "15:30", image: "/illustrations/meal-snack.png" }
 ];
+const ANALYSIS_TABS: Array<{ key: AnalysisView; label: string }> = [
+  { key: "calories", label: "热量" },
+  { key: "weight", label: "体重" },
+  { key: "meals", label: "餐别" },
+  { key: "correlation", label: "相关性" }
+];
+const CORRELATION_WINDOW_DAYS = 14;
+const DINNER_TARGET_KCAL = 450;
 
 export default function DashboardTailAdminClient({ initialDate }: { initialDate: string }) {
   const [dateKey, setDateKey] = useState(initialDate);
@@ -520,13 +538,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
               </AppTabSection>
             ) : null}
             {activeTab === "trends" ? (
-              <AppTabSection eyebrow="Analysis" title="分析" description="按周观察热量缺口和体重变化，按四周查看长期趋势。">
-                <div className="space-y-4">
-                  <TrendCard dashboard={dashboard} />
-                  <WeightChartCard days={dashboard?.days || []} />
-                  <MonthlyStatsCard dashboard={dashboard} />
-                </div>
-              </AppTabSection>
+              <AnalysisPage dashboard={dashboard} />
             ) : null}
             {activeTab === "more" ? (
               <AppTabSection eyebrow="Profile" title="我的" description="管理数据源、同步状态和连接设置。">
@@ -587,7 +599,7 @@ function BottomNavigation({ activeTab, onNavigate }: { activeTab: AppTab; onNavi
       <BottomNavItem icon={<Home size={21} strokeWidth={1.8} />} label="首页" active={activeTab === "home"} onClick={() => onNavigate("home")} />
       <BottomNavItem icon={<ClipboardList size={21} strokeWidth={1.8} />} label="计划" active={activeTab === "quick"} onClick={() => onNavigate("quick")} />
       <BottomNavItem icon={<Plus size={29} strokeWidth={1.8} />} label="记一餐" active={activeTab === "capture"} primary onClick={() => onNavigate("capture")} />
-      <BottomNavItem icon={<BarChart3 size={21} strokeWidth={1.8} />} label="分析" active={activeTab === "trends"} onClick={() => onNavigate("trends")} />
+      <BottomNavItem icon={<ChartPie size={21} strokeWidth={1.8} />} label="分析" active={activeTab === "trends"} onClick={() => onNavigate("trends")} />
       <BottomNavItem icon={<UserRound size={22} strokeWidth={1.8} />} label="我的" active={activeTab === "more"} onClick={() => onNavigate("more")} />
     </nav>
   );
@@ -596,8 +608,8 @@ function BottomNavigation({ activeTab, onNavigate }: { activeTab: AppTab; onNavi
 function BottomNavItem({ icon, label, active, primary, onClick }: { icon: React.ReactNode; label: string; active?: boolean; primary?: boolean; onClick: () => void }) {
   if (primary) {
     return (
-      <button type="button" onClick={onClick} className="group relative flex min-h-12 min-w-0 items-end justify-center outline-none" aria-label={label}>
-        <span className={`journal-primary-nav absolute -top-9 flex h-16 w-16 items-center justify-center rounded-full text-white ring-[7px] ring-[#faf6ef] transition duration-200 group-active:scale-95 group-focus-visible:ring-[9px] ${active ? "scale-[1.04]" : ""}`}>
+      <button type="button" onClick={onClick} className="group relative flex min-h-14 min-w-0 items-center justify-center outline-none" aria-label={label}>
+        <span className={`journal-primary-nav absolute -top-5 flex h-14 w-14 items-center justify-center rounded-full text-white transition duration-200 group-active:scale-95 ${active ? "scale-[1.04]" : ""}`}>
           {icon}
         </span>
         <span className="sr-only">{label}</span>
@@ -606,9 +618,9 @@ function BottomNavItem({ icon, label, active, primary, onClick }: { icon: React.
   }
 
   return (
-    <button type="button" onClick={onClick} className={`journal-nav-item group flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 px-1 text-[10px] font-medium outline-none transition-colors duration-200 ${active ? "journal-nav-item-active font-semibold" : ""}`}>
-      <span className={`transition-transform duration-200 group-active:scale-90 ${active ? "scale-110" : "scale-100"}`}>{icon}</span>
-      <span>{label}</span>
+    <button type="button" onClick={onClick} className={`journal-nav-item group flex min-h-14 min-w-0 flex-col items-center justify-center px-1 outline-none transition duration-200 ${active ? "journal-nav-item-active" : ""}`}>
+      <span className={`journal-nav-icon transition-transform duration-200 group-active:scale-90 ${active ? "scale-105" : "scale-100"}`}>{icon}</span>
+      <span className="journal-nav-label">{label}</span>
     </button>
   );
 }
@@ -1268,12 +1280,10 @@ function DraftCard({
   onGrams: (itemId: string, value: string) => void;
   onConfirm: () => void;
 }) {
-  const draftImageUrl = draft.compressedImageUrl || draft.imageUrl;
-
   return (
-    <div className="rounded-lg border border-fuchsia-100 bg-fuchsia-50/40 p-3 sm:p-4">
-      <div className="mb-4 flex items-start justify-between gap-4">
-        <div>
+    <div className="w-full max-w-full overflow-hidden rounded-lg border border-fuchsia-100 bg-fuchsia-50/40 p-3 sm:p-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <p className="text-sm font-medium text-amber-600">待确认</p>
           <h3 className="text-lg font-semibold">餐食草稿</h3>
           <p className="mt-1 text-xs text-slate-500">
@@ -1282,46 +1292,43 @@ function DraftCard({
           </p>
           {timings ? <p className="mt-1 text-xs text-slate-400">总耗时 {seconds(timings.totalServerMs + timings.clientCompressionMs)} · AI 识图 {seconds(timings.openAiMs)} · 上传 {seconds(timings.blobUploadMs)}</p> : null}
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <input value={kcal} onChange={(event) => onKcal(event.target.value)} className="h-10 w-28 rounded-lg border border-slate-200 px-3 text-right font-semibold outline-none focus:border-fuchsia-500" inputMode="numeric" />
-          <button onClick={onConfirm} className="flex h-10 items-center gap-2 rounded-lg bg-fuchsia-600 px-4 font-semibold text-white transition hover:bg-fuchsia-700">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+          <input value={kcal} onChange={(event) => onKcal(event.target.value)} className="h-11 w-full min-w-0 rounded-lg border border-slate-200 px-3 text-right font-semibold outline-none focus:border-fuchsia-500 sm:h-10 sm:w-28" inputMode="numeric" />
+          <button onClick={onConfirm} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-600 px-4 font-semibold text-white transition hover:bg-fuchsia-700 sm:h-10 sm:w-auto">
             <Check size={17} />
             确认
           </button>
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-[112px_minmax(0,1fr)]">
-        <MealThumbnail url={draftImageUrl} label="上传图片" />
-        <div className="grid gap-2">
-          {draft.items.map((item) => (
-            <div key={item.id} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-              <div className="flex justify-between gap-3 font-medium">
-                <span>{item.name}</span>
-                <span>{item.kcal} kcal</span>
-              </div>
-              <p className="mt-1 text-sm text-slate-500">{item.portion || "AI 已识别食物种类"}</p>
-              <div className="mt-2 flex items-center gap-2">
-                <label htmlFor={`draft-grams-${item.id}`} className="text-xs font-medium text-slate-500">实际重量</label>
-                <div className="flex h-10 min-w-0 flex-1 items-center rounded-lg border border-slate-200 bg-white px-2">
-                  <input
-                    id={`draft-grams-${item.id}`}
-                    value={item.grams ?? ""}
-                    onChange={(event) => onGrams(item.id, event.target.value)}
-                    inputMode="decimal"
-                    placeholder="待补充"
-                    className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none"
-                  />
-                  <span className="ml-1 text-xs text-slate-400">g</span>
-                </div>
-              </div>
-              <p className={`mt-2 text-xs ${item.nutritionSource ? "text-fuchsia-700" : "text-slate-400"}`}>
-                {item.nutritionSource
-                  ? `已引用个人营养库：${item.nutritionSource.name} · ${item.nutritionSource.kcalPer100g} kcal/100g`
-                  : "AI 估测重量，可按实际情况调整"}
-              </p>
+      <div className="grid gap-2">
+        {draft.items.map((item) => (
+          <div key={item.id} className="min-w-0 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+            <div className="flex justify-between gap-3 font-medium">
+              <span className="min-w-0 truncate">{item.name}</span>
+              <span className="shrink-0">{item.kcal} kcal</span>
             </div>
-          ))}
-        </div>
+            <p className="mt-1 text-sm text-slate-500">{item.portion || "AI 已识别食物种类"}</p>
+            <div className="mt-2 flex items-center gap-2">
+              <label htmlFor={`draft-grams-${item.id}`} className="shrink-0 text-xs font-medium text-slate-500">实际重量</label>
+              <div className="flex h-10 min-w-0 flex-1 items-center rounded-lg border border-slate-200 bg-white px-2">
+                <input
+                  id={`draft-grams-${item.id}`}
+                  value={item.grams ?? ""}
+                  onChange={(event) => onGrams(item.id, event.target.value)}
+                  inputMode="decimal"
+                  placeholder="待补充"
+                  className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none"
+                />
+                <span className="ml-1 text-xs text-slate-400">g</span>
+              </div>
+            </div>
+            <p className={`mt-2 text-xs ${item.nutritionSource ? "text-fuchsia-700" : "text-slate-400"}`}>
+              {item.nutritionSource
+                ? `已引用个人营养库：${item.nutritionSource.name} · ${item.nutritionSource.kcalPer100g} kcal/100g`
+                : "AI 估测重量，可按实际情况调整"}
+            </p>
+          </div>
+        ))}
       </div>
       {draft.notes && !looksMojibake(draft.notes) ? <p className="mt-3 text-sm text-slate-600">{draft.notes}</p> : null}
       {draft.uncertainty && !looksMojibake(draft.uncertainty) ? <p className="mt-2 text-sm text-amber-700">{draft.uncertainty}</p> : null}
@@ -1329,68 +1336,421 @@ function DraftCard({
   );
 }
 
-function TrendCard({ dashboard }: { dashboard: Dashboard | null }) {
-  const days = dashboard?.days || [];
+function AnalysisPage({ dashboard }: { dashboard: Dashboard | null }) {
+  const [view, setView] = useState<AnalysisView>("correlation");
+  const summary = useMemo(() => buildAnalysisSummary(dashboard), [dashboard]);
+
   return (
-    <div className="panel p-4 sm:p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-slate-500">Calorie Trend</p>
-          <h3 className="text-lg font-semibold">本周热量趋势</h3>
-        </div>
-        <div className="flex items-center gap-4 text-xs text-slate-500">
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-fuchsia-300" />摄入热量</span>
-          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-fuchsia-700" />每日缺口</span>
+    <section className="analysis-page">
+      <div className="analysis-hero">
+        <div className="analysis-hero-copy">
+          <p>Correlation Gallery</p>
+          <h1>数据关系</h1>
+          <span>探索摄入、缺口与体重变化的内在联系</span>
         </div>
       </div>
-      <ComboTrendChart days={days} />
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <SmallStat label="本周累计缺口" value={kcalText(dashboard?.weekDeficitKcal ?? dashboard?.sevenDayDeficitKcal)} />
-        <SmallStat label="预计下降" value={`${dashboard?.predictedWeightLossJin.toFixed(2) || "0.00"} 斤`} />
+      <div className="analysis-tabs" role="tablist" aria-label="分析视图">
+        {ANALYSIS_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={view === tab.key}
+            className={view === tab.key ? "analysis-tab analysis-tab-active" : "analysis-tab"}
+            onClick={() => setView(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
-    </div>
+      {view === "correlation" ? <CorrelationAnalysis summary={summary} /> : null}
+      {view === "calories" ? <CaloriesAnalysis dashboard={dashboard} summary={summary} /> : null}
+      {view === "weight" ? <WeightAnalysis dashboard={dashboard} summary={summary} /> : null}
+      {view === "meals" ? <MealSlotAnalysis summary={summary} /> : null}
+    </section>
   );
 }
-function WeightChartCard({ days }: { days: DashboardDay[] }) {
+
+function CorrelationAnalysis({ summary }: { summary: AnalysisSummary }) {
+  const hasEnoughData = summary.validCorrelationPoints >= 5;
   return (
-    <div className="panel p-4 sm:p-5">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-slate-500">Weight Trend</p>
-          <h3 className="text-lg font-semibold">本周体重追踪</h3>
+    <div className="space-y-4">
+      <section className="analysis-card analysis-main-card">
+        <div className="analysis-card-header">
+          <div>
+            <p>Relationship Map</p>
+            <h2>摄入、热量缺口与体重变化关系</h2>
+          </div>
+          <span>近 {CORRELATION_WINDOW_DAYS} 天</span>
         </div>
-        <span className="rounded-full bg-fuchsia-50 px-2.5 py-1 text-xs font-medium text-fuchsia-700">手动录入</span>
+        {hasEnoughData ? (
+          <CorrelationChart summary={summary} />
+        ) : (
+          <div className="analysis-empty-card">
+            <Database size={24} />
+            <strong>记录满 7 天后生成洞察</strong>
+            <p>需要至少 5 个有效的晚餐与次日体重记录，才能计算个人相关性。</p>
+          </div>
+        )}
+      </section>
+
+      <section className="analysis-score-card">
+        <div>
+          <p>相关指数</p>
+          <strong>{summary.correlation == null ? "--" : Math.abs(summary.correlation).toFixed(2)}</strong>
+          <span>{summary.correlationLabel}</span>
+        </div>
+        <div>
+          <p><Lightbulb size={15} /> 建议</p>
+          <strong>晚餐控制在 {DINNER_TARGET_KCAL} kcal 内</strong>
+          <span>{summary.recommendation}</span>
+        </div>
+      </section>
+
+      <div className="analysis-mini-grid">
+        <AnalysisMiniCard icon={<Utensils size={19} />} title="早餐稳定度" value={percentMetric(summary.breakfastVariation)} status={summary.breakfastStatus} accent="sage" />
+        <AnalysisMiniCard icon={<Flame size={19} />} title="晚餐波动" value={percentMetric(summary.dinnerVariation)} status={summary.dinnerStatus} accent="coral" />
+        <AnalysisMiniCard icon={<Target size={19} />} title="缺口达标率" value={percentMetric(summary.deficitRate)} status={summary.deficitStatus} accent="sage" />
       </div>
-      <WeightLineChart days={days} />
-      <div className="mt-4">
-        <SmallStat label="最新体重" value={latestWeightText(days)} />
-      </div>
+
+      <InsightPanel summary={summary} />
     </div>
   );
 }
 
-function MonthlyStatsCard({ dashboard }: { dashboard: Dashboard | null }) {
-  const weeks = dashboard?.weeks || [];
+function CaloriesAnalysis({ dashboard, summary }: { dashboard: Dashboard | null; summary: AnalysisSummary }) {
   return (
-    <div className="panel p-4 sm:p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <section className="analysis-card">
+      <div className="analysis-card-header">
         <div>
-          <p className="text-sm font-medium text-slate-500">Monthly Summary</p>
-          <h3 className="text-lg font-semibold">月度统计</h3>
+          <p>Calorie Summary</p>
+          <h2>热量趋势摘要</h2>
         </div>
-        <div className="flex items-center gap-4 text-xs text-slate-500">
-          <span className="inline-flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-fuchsia-300" />每周缺口</span>
-          <span className="inline-flex items-center gap-1"><span className="h-0.5 w-4 bg-fuchsia-700" />周均体重</span>
+        <span>本周</span>
+      </div>
+      <ComboTrendChart days={dashboard?.days || []} compact />
+      <div className="analysis-summary-grid">
+        <SmallStat label="本周累计缺口" value={kcalText(dashboard?.weekDeficitKcal ?? dashboard?.sevenDayDeficitKcal)} compact />
+        <SmallStat label="日均摄入" value={kcalText(summary.averageIntakeKcal)} compact />
+        <SmallStat label="预计下降" value={`${dashboard?.predictedWeightLossJin.toFixed(2) || "0.00"} 斤`} compact />
+      </div>
+    </section>
+  );
+}
+
+function WeightAnalysis({ dashboard, summary }: { dashboard: Dashboard | null; summary: AnalysisSummary }) {
+  return (
+    <section className="analysis-card">
+      <div className="analysis-card-header">
+        <div>
+          <p>Weight Summary</p>
+          <h2>体重趋势摘要</h2>
         </div>
+        <span>本周</span>
       </div>
-      <FourWeekChart weeks={weeks} />
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <SmallStat label="4 周累计缺口" value={kcalText(dashboard?.fourWeekDeficitKcal)} compact />
-        <SmallStat label="4 周预计下降" value={`${dashboard?.predictedFourWeekWeightLossJin.toFixed(2) || "0.00"} 斤`} compact />
-        <SmallStat label="本周平均体重" value={latestWeeklyAverageWeightText(weeks)} compact />
+      <WeightLineChart days={dashboard?.days || []} />
+      <div className="analysis-summary-grid">
+        <SmallStat label="最新体重" value={latestWeightText(dashboard?.days || [])} compact />
+        <SmallStat label="近 14 天变化" value={summary.weightChangeText} compact />
+        <SmallStat label="有效记录" value={`${summary.weightRecordCount} 天`} compact />
       </div>
+    </section>
+  );
+}
+
+function MealSlotAnalysis({ summary }: { summary: AnalysisSummary }) {
+  return (
+    <section className="analysis-card">
+      <div className="analysis-card-header">
+        <div>
+          <p>Meal Slot Summary</p>
+          <h2>餐别结构摘要</h2>
+        </div>
+        <span>近 14 天</span>
+      </div>
+      <div className="analysis-slot-list">
+        {summary.slotAverages.map((slot) => (
+          <div key={slot.key} className="analysis-slot-row">
+            <span>{slot.label}</span>
+            <div><i style={{ width: `${Math.min(100, slot.share * 100)}%` }} /></div>
+            <strong>{slot.averageKcal ? `${Math.round(slot.averageKcal)} kcal` : "--"}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CorrelationChart({ summary }: { summary: AnalysisSummary }) {
+  const width = 720;
+  const height = 330;
+  const padding = { top: 54, right: 34, bottom: 48, left: 50 };
+  const chartW = width - padding.left - padding.right;
+  const chartH = height - padding.top - padding.bottom;
+  const days = summary.recentDays;
+  const x = (index: number) => padding.left + (days.length <= 1 ? chartW / 2 : (chartW / (days.length - 1)) * index);
+  const maxKcal = niceCeil(Math.max(800, ...days.map((day) => day.intakeKcal || 0), ...days.map((day) => Math.max(0, day.deficitKcal || 0))));
+  const yKcal = (value: number) => padding.top + ((maxKcal - value) / maxKcal) * chartH;
+  const deltas = days.map((day) => dailyWeightDelta(day)).filter((value): value is number => value != null);
+  const maxAbsDelta = Math.max(0.3, ...deltas.map((value) => Math.abs(value)));
+  const yDelta = (value: number) => padding.top + ((maxAbsDelta - value) / (maxAbsDelta * 2)) * chartH;
+  const intakePoints = days.map((day, index) => `${x(index)},${yKcal(day.intakeKcal || 0)}`).join(" ");
+  const deficitPoints = days.map((day, index) => `${x(index)},${yKcal(Math.max(0, day.deficitKcal || 0))}`).join(" ");
+  const highlight = summary.strongestPair;
+  const highlightX = highlight == null ? null : x(days.findIndex((day) => day.dateKey === highlight.dateKey));
+
+  return (
+    <div className="analysis-chart-wrap">
+      <div className="analysis-legend">
+        <span><i className="analysis-dot analysis-dot-coral" />摄入热量</span>
+        <span><i className="analysis-dot analysis-dot-sage" />热量缺口</span>
+        <span><i className="analysis-dot analysis-dot-oat" />体重变化</span>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="analysis-correlation-svg" role="img" aria-label="摄入、热量缺口与体重变化关系图">
+        {[0, Math.round(maxKcal / 2), maxKcal].map((tick) => (
+          <g key={tick}>
+            <line x1={padding.left} x2={width - padding.right} y1={yKcal(tick)} y2={yKcal(tick)} stroke="rgba(95, 88, 78, 0.09)" />
+            <text x={padding.left - 10} y={yKcal(tick) + 4} textAnchor="end" className="fill-[#8a8f88] text-[13px]">
+              {tick}
+            </text>
+          </g>
+        ))}
+        <polyline points={intakePoints} fill="none" stroke="#dd7858" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+        <polyline points={deficitPoints} fill="none" stroke="#6f9677" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+        {days.map((day, index) => {
+          const delta = dailyWeightDelta(day);
+          if (delta == null) return null;
+          return <circle key={`${day.dateKey}-delta`} cx={x(index)} cy={yDelta(delta)} r={Math.min(14, Math.max(7, Math.abs(delta) * 28 + 7))} fill="#ead8bd" fillOpacity="0.72" stroke="#d8bea0" />;
+        })}
+        {highlightX != null ? (
+          <g>
+            <line x1={highlightX} x2={highlightX} y1={padding.top + 24} y2={height - padding.bottom} stroke="#dfcbb6" strokeDasharray="6 8" />
+            <foreignObject x={Math.min(width - 246, Math.max(76, highlightX - 112))} y="36" width="224" height="58">
+              <div className="analysis-chart-callout">晚餐热量升高时，次日体重波动更明显</div>
+            </foreignObject>
+          </g>
+        ) : null}
+        {days.map((day, index) => (
+          <text key={`${day.dateKey}-label`} x={x(index)} y={height - 24} textAnchor="middle" className="fill-[#8a8f88] text-[12px]">
+            {index % 2 === 0 ? day.dateKey.slice(5) : ""}
+          </text>
+        ))}
+      </svg>
     </div>
   );
+}
+
+function AnalysisMiniCard({ icon, title, value, status, accent }: { icon: React.ReactNode; title: string; value: string; status: string; accent: "sage" | "coral" }) {
+  return (
+    <div className={`analysis-mini-card analysis-mini-${accent}`}>
+      <div>{icon}</div>
+      <p>{title}</p>
+      <strong>{value}</strong>
+      <span>{status}</span>
+    </div>
+  );
+}
+
+function InsightPanel({ summary }: { summary: AnalysisSummary }) {
+  return (
+    <section className="analysis-insight-card">
+      <div className="analysis-insight-title">
+        <Leaf size={22} />
+        <div>
+          <p>Insight 洞察</p>
+          <h2>数据解读</h2>
+        </div>
+      </div>
+      <div className="analysis-insight-list">
+        {summary.insights.map((insight) => (
+          <p key={insight}>{insight}</p>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+type AnalysisSourceDay = DashboardDay & { meals?: MealEntry[] };
+type AnalysisSummary = ReturnType<typeof buildAnalysisSummary>;
+
+function buildAnalysisSummary(dashboard: Dashboard | null) {
+  const sourceDays: AnalysisSourceDay[] = (dashboard?.analysisDays?.length ? dashboard.analysisDays : dashboard?.days || []).slice();
+  const recentDays = sourceDays.slice(-CORRELATION_WINDOW_DAYS);
+  const target = dashboard?.dailyDeficitTargetKcal || 500;
+  const correlationPairs = buildDinnerWeightPairs(recentDays);
+  const correlation = correlationPairs.length >= 2 ? pearsonCorrelation(correlationPairs.map((pair) => pair.dinnerKcal), correlationPairs.map((pair) => pair.nextWeightDeltaKg)) : null;
+  const strongestPair = correlationPairs.reduce<(typeof correlationPairs)[number] | null>((current, pair) => {
+    if (!current) return pair;
+    return Math.abs(pair.nextWeightDeltaKg) > Math.abs(current.nextWeightDeltaKg) ? pair : current;
+  }, null);
+  const breakfastValues = recentDays.map((day) => mealSlotKcal(day, "breakfast")).filter((value) => value > 0);
+  const dinnerValues = recentDays.map((day) => mealSlotKcal(day, "dinner")).filter((value) => value > 0);
+  const deficitValues = recentDays.map((day) => day.deficitKcal).filter((value): value is number => value != null);
+  const weightValues = recentDays.map((day) => day.weightKg).filter((value): value is number => value != null);
+  const breakfastVariation = coefficientOfVariation(breakfastValues);
+  const dinnerVariation = coefficientOfVariation(dinnerValues);
+  const deficitRate = deficitValues.length ? deficitValues.filter((value) => value >= target).length / deficitValues.length : null;
+  const averageIntakeKcal = recentDays.length ? recentDays.reduce((total, day) => total + (day.intakeKcal || 0), 0) / recentDays.length : null;
+  const slotAverages = MEAL_SLOTS.map((slot) => {
+    const values = recentDays.map((day) => mealSlotKcal(day, slot.key)).filter((value) => value > 0);
+    const averageKcal = values.length ? values.reduce((total, value) => total + value, 0) / values.length : 0;
+    return {
+      key: slot.key,
+      label: slot.label,
+      averageKcal,
+      share: averageKcal / Math.max(1, ...MEAL_SLOTS.map((candidate) => {
+        const candidateValues = recentDays.map((day) => mealSlotKcal(day, candidate.key)).filter((value) => value > 0);
+        return candidateValues.length ? candidateValues.reduce((total, value) => total + value, 0) / candidateValues.length : 0;
+      }))
+    };
+  });
+  const correlationLabel = correlation == null || correlationPairs.length < 5 ? "等待更多记录" : correlationStrengthLabel(correlation);
+  const recommendation =
+    dinnerVariation != null && dinnerVariation > 0.25
+      ? "晚餐波动偏高，先稳定晚餐结构比继续压低早餐更有效。"
+      : "晚餐结构相对稳定，继续保持当前节奏。";
+  const insights = buildInsightMessages({
+    correlation,
+    validCorrelationPoints: correlationPairs.length,
+    breakfastVariation,
+    dinnerVariation,
+    deficitRate
+  });
+
+  return {
+    recentDays,
+    correlation,
+    validCorrelationPoints: correlationPairs.length,
+    strongestPair,
+    breakfastVariation,
+    dinnerVariation,
+    deficitRate,
+    averageIntakeKcal,
+    weightRecordCount: weightValues.length,
+    weightChangeText: weightChangeText(weightValues),
+    breakfastStatus: variationStatus(breakfastVariation, "早餐"),
+    dinnerStatus: variationStatus(dinnerVariation, "晚餐"),
+    deficitStatus: deficitRateStatus(deficitRate),
+    correlationLabel,
+    recommendation,
+    insights,
+    slotAverages
+  };
+}
+
+function buildDinnerWeightPairs(days: AnalysisSourceDay[]) {
+  const pairs: Array<{ dateKey: string; dinnerKcal: number; nextWeightDeltaKg: number }> = [];
+  for (let index = 0; index < days.length - 1; index += 1) {
+    const day = days[index];
+    const next = days[index + 1];
+    const dinnerKcal = mealSlotKcal(day, "dinner");
+    if (dinnerKcal <= 0 || day.weightKg == null || next.weightKg == null) continue;
+    pairs.push({
+      dateKey: day.dateKey,
+      dinnerKcal,
+      nextWeightDeltaKg: Number((next.weightKg - day.weightKg).toFixed(2))
+    });
+  }
+  return pairs;
+}
+
+function mealSlotKcal(day: AnalysisSourceDay, slot: MealSlot) {
+  return (day.meals || [])
+    .filter((meal) => meal.mealSlot === slot)
+    .reduce((total, meal) => total + (meal.finalKcal || 0), 0);
+}
+
+function dailyWeightDelta(day: AnalysisSourceDay) {
+  if (day.weightKg == null || day.previousWeightKg == null) return null;
+  return Number((day.weightKg - day.previousWeightKg).toFixed(2));
+}
+
+function pearsonCorrelation(a: number[], b: number[]) {
+  if (a.length !== b.length || a.length < 2) return null;
+  const meanA = a.reduce((total, value) => total + value, 0) / a.length;
+  const meanB = b.reduce((total, value) => total + value, 0) / b.length;
+  const numerator = a.reduce((total, value, index) => total + (value - meanA) * (b[index] - meanB), 0);
+  const varianceA = a.reduce((total, value) => total + (value - meanA) ** 2, 0);
+  const varianceB = b.reduce((total, value) => total + (value - meanB) ** 2, 0);
+  const denominator = Math.sqrt(varianceA * varianceB);
+  return denominator === 0 ? null : Math.max(-1, Math.min(1, numerator / denominator));
+}
+
+function coefficientOfVariation(values: number[]) {
+  if (values.length < 2) return null;
+  const mean = values.reduce((total, value) => total + value, 0) / values.length;
+  if (mean <= 0) return null;
+  const variance = values.reduce((total, value) => total + (value - mean) ** 2, 0) / values.length;
+  return Math.sqrt(variance) / mean;
+}
+
+function percentMetric(value: number | null) {
+  return value == null ? "--" : `${Math.round(value * 100)}%`;
+}
+
+function correlationStrengthLabel(value: number) {
+  const abs = Math.abs(value);
+  if (abs < 0.35) return "弱相关";
+  if (abs < 0.65) return value > 0 ? "中等正相关" : "中等负相关";
+  return value > 0 ? "较强正相关" : "较强负相关";
+}
+
+function variationStatus(value: number | null, label: string) {
+  if (value == null) return "待记录";
+  if (value < 0.16) return "稳定";
+  if (value < 0.28) return `${label}波动适中`;
+  return `${label}偏高`;
+}
+
+function deficitRateStatus(value: number | null) {
+  if (value == null) return "待同步";
+  if (value >= 0.7) return "良好";
+  if (value >= 0.45) return "一般";
+  return "需加强";
+}
+
+function weightChangeText(values: number[]) {
+  if (values.length < 2) return "--";
+  const delta = values[values.length - 1] - values[0];
+  const sign = delta > 0 ? "+" : "";
+  return `${sign}${delta.toFixed(1)} kg`;
+}
+
+function buildInsightMessages({
+  correlation,
+  validCorrelationPoints,
+  breakfastVariation,
+  dinnerVariation,
+  deficitRate
+}: {
+  correlation: number | null;
+  validCorrelationPoints: number;
+  breakfastVariation: number | null;
+  dinnerVariation: number | null;
+  deficitRate: number | null;
+}) {
+  if (validCorrelationPoints < 5) {
+    return ["记录满 7 天并持续录入体重后，我会开始分析晚餐与次日体重波动的关系。", "当前先保持每日餐别记录完整，尤其是晚餐与体重记录。"];
+  }
+  const messages: string[] = [];
+  if (correlation != null && correlation >= 0.65) {
+    messages.push("晚餐热量升高时，次日体重波动更明显，优先把晚餐控制在 450 kcal 内。");
+  } else if (correlation != null && Math.abs(correlation) >= 0.35) {
+    messages.push("晚餐热量与次日体重有一定关联，可以继续观察晚餐结构和盐分摄入。");
+  } else {
+    messages.push("晚餐与次日体重暂未出现强关联，体重变化可能更多来自水分、运动或同步数据波动。");
+  }
+  if (deficitRate != null && deficitRate >= 0.7) {
+    messages.push("本阶段缺口达标率良好，执行节奏比较稳定。");
+  } else {
+    messages.push("缺口达标天数偏少，可以先把每日缺口稳定到 500 kcal 附近。");
+  }
+  if (breakfastVariation != null && breakfastVariation < 0.16) {
+    messages.push("早餐结构稳定，这是全天摄入更容易受控的好信号。");
+  } else if (dinnerVariation != null && dinnerVariation > 0.28) {
+    messages.push("晚餐波动偏高，建议固定一个高蛋白低碳水模板作为默认晚餐。");
+  }
+  return messages;
 }
 
 function QuickPresetsCard({
@@ -1988,7 +2348,7 @@ function TodayMeals({
               <span className="journal-meal-meta"><strong>{slot.label}</strong><small>{latest ? mealTime(latest.createdAt, slot.time) : slot.time}</small></span>
               <span className="journal-meal-kcal">{latest ? kcal : "--"} <small>kcal</small></span>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={latest?.compressedImageUrl || latest?.imageUrl || slot.image} alt="" />
+              <img src={slot.image} alt="" />
             </button>
           );
         })}

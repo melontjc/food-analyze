@@ -1,5 +1,5 @@
 import { DAILY_DEFICIT_TARGET_KCAL, JIN_KCAL } from "@/lib/config";
-import { recentWeekRanges, weekRange } from "@/lib/date";
+import { dateRange, recentWeekRanges, weekRange } from "@/lib/date";
 
 function seedFor(value: string) {
   return [...value].reduce((total, character) => (total * 31 + character.charCodeAt(0)) % 100000, 7);
@@ -45,18 +45,29 @@ function mockMeal(dateKey: string, index: number, kcal: number) {
 
 function mockDay(dateKey: string) {
   const seed = seedFor(dateKey);
-  const mealKcal = [380 + (seed % 80), 560 + (seed % 140), 420 + (seed % 110), 120 + (seed % 60)];
+  const dayIndex = Math.floor(seed / 97) % 28;
+  const dinnerWave = Math.round(Math.sin(dayIndex / 2.1) * 90);
+  const mealKcal = [
+    380 + (seed % 52),
+    545 + (seed % 118),
+    430 + dinnerWave + (seed % 58),
+    120 + (seed % 48)
+  ];
   const mealCount = 3 + (seed % 2);
   const meals = mealKcal.slice(0, mealCount).map((kcal, index) => mockMeal(dateKey, index, kcal));
   const intakeKcal = meals.reduce((total, meal) => total + (meal.finalKcal || 0), 0);
   const totalBurnKcal = 2050 + (seed % 420);
+  const dinnerKcal = mealKcal[2];
+  const weightTrend = 75.8 - dayIndex * 0.035;
+  const dinnerImpact = Math.max(-0.18, Math.min(0.26, (dinnerKcal - 470) / 620));
+  const weightKg = Number((weightTrend + dinnerImpact + Math.sin(dayIndex / 1.7) * 0.06).toFixed(1));
   return {
     dateKey,
     intakeKcal,
     mealCount,
-    weightKg: Number((75.8 - (seed % 10) / 10).toFixed(1)),
+    weightKg,
     weightRecordedAt: new Date(`${dateKey}T07:30:00+08:00`).toISOString(),
-    previousWeightKg: Number((75.9 - (seed % 10) / 10).toFixed(1)),
+    previousWeightKg: Number((weightKg + 0.1).toFixed(1)),
     ouraRestingKcal: totalBurnKcal - 420,
     ouraTotalKcal: totalBurnKcal,
     intervalsTrainingKcal: 280 + (seed % 260),
@@ -72,7 +83,8 @@ function mockDay(dateKey: string) {
 export function getMockDashboard(dateKey: string) {
   const dates = weekRange(dateKey);
   const weekBuckets = recentWeekRanges(dateKey, 4);
-  const allDates = Array.from(new Set([...dates, ...weekBuckets.flatMap((week) => week.dates)]));
+  const analysisDates = dateRange(dateKey, 28);
+  const allDates = Array.from(new Set([...dates, ...analysisDates, ...weekBuckets.flatMap((week) => week.dates)]));
   const allDays = allDates.map(mockDay);
   const dayFor = (key: string) => allDays.find((day) => day.dateKey === key) || mockDay(key);
   const days = dates.map(dayFor);
@@ -95,6 +107,7 @@ export function getMockDashboard(dateKey: string) {
     dateKey,
     today,
     days,
+    analysisDays: analysisDates.map(dayFor),
     weeks,
     weekDeficitKcal,
     sevenDayDeficitKcal: weekDeficitKcal,

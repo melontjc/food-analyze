@@ -1,11 +1,12 @@
 import { DAILY_DEFICIT_TARGET_KCAL, JIN_KCAL } from "@/lib/config";
-import { addDays, recentWeekRanges, weekRange } from "@/lib/date";
+import { addDays, dateRange, recentWeekRanges, weekRange } from "@/lib/date";
 import { prisma } from "@/lib/prisma";
 
 export async function getDashboard(dateKey: string) {
   const dates = weekRange(dateKey);
   const weekBuckets = recentWeekRanges(dateKey, 4);
-  const summaryDates = [...dates, ...weekBuckets.flatMap((week) => week.dates)];
+  const analysisDates = dateRange(dateKey, 28);
+  const summaryDates = [...dates, ...analysisDates, ...weekBuckets.flatMap((week) => week.dates)];
   const allDates = Array.from(new Set([...summaryDates, ...summaryDates.map((key) => addDays(key, -1))]));
   const [meals, burns, activities, weights] = await Promise.all([
     prisma.mealEntry.findMany({
@@ -67,6 +68,7 @@ export async function getDashboard(dateKey: string) {
     dateKey,
     today: target,
     days,
+    analysisDays: analysisDates.map((key) => allDays.find((day) => day.dateKey === key) || buildDay(key)),
     weeks,
     weekDeficitKcal,
     sevenDayDeficitKcal: weekDeficitKcal,
