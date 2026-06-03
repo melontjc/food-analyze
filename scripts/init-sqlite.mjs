@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS Connection (
 CREATE TABLE IF NOT EXISTS MealEntry (
   id TEXT PRIMARY KEY NOT NULL,
   dateKey TEXT NOT NULL,
+  mealSlot TEXT NOT NULL DEFAULT 'snack',
   status TEXT NOT NULL DEFAULT 'draft',
   imageUrl TEXT,
   compressedImageUrl TEXT,
@@ -105,6 +106,11 @@ CREATE TABLE IF NOT EXISTS SyncRun (
   endedAt DATETIME
 );
 `);
+
+const mealEntryColumns = db.prepare("PRAGMA table_info(MealEntry)").all();
+if (!mealEntryColumns.some((column) => column.name === "mealSlot")) {
+  db.exec("ALTER TABLE MealEntry ADD COLUMN mealSlot TEXT NOT NULL DEFAULT 'snack';");
+}
 
 db.close();
 console.log(`SQLite database initialized at ${path.join(prismaDir, "dev.db")}`);

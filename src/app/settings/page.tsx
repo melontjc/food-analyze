@@ -7,8 +7,8 @@ export default async function SettingsPage() {
   const user = await currentUser();
   if (!user) redirect("/login");
   return (
-    <main className="min-h-screen bg-[#f7eff4] text-slate-900">
-      <div className="mx-auto min-h-screen w-full max-w-[480px] bg-[linear-gradient(180deg,#fff9fb_0%,#fefbfc_100%)] px-4 pb-6 pt-[calc(1rem+env(safe-area-inset-top))] shadow-[0_0_70px_rgba(138,91,132,0.16)]">
+    <main className="wellness-shell text-slate-900">
+      <div className="wellness-app px-4 pb-6 pt-[calc(1rem+env(safe-area-inset-top))]">
         <header className="mb-5 flex items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold text-fuchsia-600">Settings</p>

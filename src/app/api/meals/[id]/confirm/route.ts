@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
   finalKcal: z.number().int().min(0).max(10000),
+  mealSlot: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
   notes: z.string().max(1000).optional().nullable(),
   items: z
     .array(
@@ -56,6 +57,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       where: { id },
       data: {
         status: "confirmed",
+        mealSlot: parsed.data.mealSlot,
         finalKcal: parsed.data.finalKcal,
         modelKcal: parsed.data.items ? recalculatedTotal : meal.modelKcal,
         notes: parsed.data.notes || null

@@ -1,4 +1,4 @@
-import { JIN_KCAL } from "@/lib/config";
+import { DAILY_DEFICIT_TARGET_KCAL, JIN_KCAL } from "@/lib/config";
 import { recentWeekRanges, weekRange } from "@/lib/date";
 
 function seedFor(value: string) {
@@ -7,14 +7,16 @@ function seedFor(value: string) {
 
 function mockMeal(dateKey: string, index: number, kcal: number) {
   const options = [
-    { name: "空气炸锅烤红薯", portion: "200g" },
-    { name: "燕麦牛奶早餐", portion: "燕麦 45g · 牛奶 250g" },
-    { name: "鸡胸肉蔬菜碗", portion: "鸡胸肉 160g · 时蔬 220g" }
+    { name: "燕麦牛奶早餐", portion: "燕麦 45g · 牛奶 250g", mealSlot: "breakfast" },
+    { name: "鸡胸肉蔬菜碗", portion: "鸡胸肉 160g · 时蔬 220g", mealSlot: "lunch" },
+    { name: "香煎三文鱼", portion: "三文鱼 160g · 时蔬 180g", mealSlot: "dinner" },
+    { name: "莓果酸奶", portion: "酸奶 180g · 莓果 60g", mealSlot: "snack" }
   ];
   const meal = options[index % options.length];
   return {
     id: `mock-meal-${dateKey}-${index}`,
     dateKey,
+    mealSlot: meal.mealSlot,
     status: "confirmed",
     imageUrl: null,
     compressedImageUrl: null,
@@ -26,6 +28,7 @@ function mockMeal(dateKey: string, index: number, kcal: number) {
     notes: "本地演示数据",
     originalBytes: null,
     compressedBytes: null,
+    createdAt: new Date(`${dateKey}T${String(8 + index * 4).padStart(2, "0")}:00:00+08:00`).toISOString(),
     items: [
       {
         id: `mock-item-${dateKey}-${index}`,
@@ -42,8 +45,8 @@ function mockMeal(dateKey: string, index: number, kcal: number) {
 
 function mockDay(dateKey: string) {
   const seed = seedFor(dateKey);
-  const mealKcal = [380 + (seed % 80), 560 + (seed % 140), 420 + (seed % 110)];
-  const mealCount = 2 + (seed % 2);
+  const mealKcal = [380 + (seed % 80), 560 + (seed % 140), 420 + (seed % 110), 120 + (seed % 60)];
+  const mealCount = 3 + (seed % 2);
   const meals = mealKcal.slice(0, mealCount).map((kcal, index) => mockMeal(dateKey, index, kcal));
   const intakeKcal = meals.reduce((total, meal) => total + (meal.finalKcal || 0), 0);
   const totalBurnKcal = 2050 + (seed % 420);
@@ -52,6 +55,8 @@ function mockDay(dateKey: string) {
     intakeKcal,
     mealCount,
     weightKg: Number((75.8 - (seed % 10) / 10).toFixed(1)),
+    weightRecordedAt: new Date(`${dateKey}T07:30:00+08:00`).toISOString(),
+    previousWeightKg: Number((75.9 - (seed % 10) / 10).toFixed(1)),
     ouraRestingKcal: totalBurnKcal - 420,
     ouraTotalKcal: totalBurnKcal,
     intervalsTrainingKcal: 280 + (seed % 260),
@@ -95,6 +100,7 @@ export function getMockDashboard(dateKey: string) {
     sevenDayDeficitKcal: weekDeficitKcal,
     fourWeekDeficitKcal,
     predictedWeightLossJin: Math.max(0, weekDeficitKcal / JIN_KCAL),
-    predictedFourWeekWeightLossJin: Math.max(0, fourWeekDeficitKcal / JIN_KCAL)
+    predictedFourWeekWeightLossJin: Math.max(0, fourWeekDeficitKcal / JIN_KCAL),
+    dailyDeficitTargetKcal: DAILY_DEFICIT_TARGET_KCAL
   };
 }

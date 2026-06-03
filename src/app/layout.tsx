@@ -1,5 +1,18 @@
 import type { Metadata, Viewport } from "next";
+import { Noto_Sans_SC, Noto_Serif_SC } from "next/font/google";
 import "./globals.css";
+
+const wellnessSans = Noto_Sans_SC({
+  variable: "--font-wellness-sans",
+  weight: "variable",
+  preload: false
+});
+
+const wellnessSerif = Noto_Serif_SC({
+  variable: "--font-wellness-serif",
+  weight: "variable",
+  preload: false
+});
 
 export const metadata: Metadata = {
   title: "Food Deficit",
@@ -10,13 +23,13 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#f7eff4"
+  themeColor: "#f6efe8"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body className={`${wellnessSans.variable} ${wellnessSerif.variable}`}>{children}</body>
     </html>
   );
 }

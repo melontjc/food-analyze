@@ -1,0 +1,2 @@
+ALTER TABLE "MealEntry"
+ADD COLUMN "mealSlot" TEXT NOT NULL DEFAULT 'snack';

@@ -1,11 +1,12 @@
-import { JIN_KCAL } from "@/lib/config";
-import { recentWeekRanges, weekRange } from "@/lib/date";
+import { DAILY_DEFICIT_TARGET_KCAL, JIN_KCAL } from "@/lib/config";
+import { addDays, recentWeekRanges, weekRange } from "@/lib/date";
 import { prisma } from "@/lib/prisma";
 
 export async function getDashboard(dateKey: string) {
   const dates = weekRange(dateKey);
   const weekBuckets = recentWeekRanges(dateKey, 4);
-  const allDates = Array.from(new Set([...dates, ...weekBuckets.flatMap((week) => week.dates)]));
+  const summaryDates = [...dates, ...weekBuckets.flatMap((week) => week.dates)];
+  const allDates = Array.from(new Set([...summaryDates, ...summaryDates.map((key) => addDays(key, -1))]));
   const [meals, burns, activities, weights] = await Promise.all([
     prisma.mealEntry.findMany({
       where: { dateKey: { in: allDates }, status: "confirmed" },
@@ -21,13 +22,17 @@ export async function getDashboard(dateKey: string) {
     const dayMeals = meals.filter((meal) => meal.dateKey === key);
     const intakeKcal = dayMeals.reduce((total, meal) => total + (meal.finalKcal || 0), 0);
     const burn = burns.find((item) => item.dateKey === key) || null;
+    const weight = weights.find((item) => item.dateKey === key) || null;
+    const previousWeight = weights.find((item) => item.dateKey === addDays(key, -1)) || null;
     const totalBurnKcal = burn?.ouraTotalKcal ?? null;
     const deficitKcal = totalBurnKcal == null || dayMeals.length === 0 ? null : totalBurnKcal - intakeKcal;
     return {
       dateKey: key,
       intakeKcal,
       mealCount: dayMeals.length,
-      weightKg: weights.find((item) => item.dateKey === key)?.weightKg ?? null,
+      weightKg: weight?.weightKg ?? null,
+      weightRecordedAt: weight?.updatedAt ?? null,
+      previousWeightKg: previousWeight?.weightKg ?? null,
       ouraRestingKcal: burn?.ouraRestingKcal ?? null,
       ouraTotalKcal: burn?.ouraTotalKcal ?? null,
       intervalsTrainingKcal: burn?.intervalsTrainingKcal ?? null,
@@ -67,6 +72,7 @@ export async function getDashboard(dateKey: string) {
     sevenDayDeficitKcal: weekDeficitKcal,
     fourWeekDeficitKcal,
     predictedWeightLossJin: Math.max(0, weekDeficitKcal / JIN_KCAL),
-    predictedFourWeekWeightLossJin: Math.max(0, fourWeekDeficitKcal / JIN_KCAL)
+    predictedFourWeekWeightLossJin: Math.max(0, fourWeekDeficitKcal / JIN_KCAL),
+    dailyDeficitTargetKcal: DAILY_DEFICIT_TARGET_KCAL
   };
 }

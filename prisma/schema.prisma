@@ -26,6 +26,7 @@ model Connection {
 model MealEntry {
   id                 String     @id @default(cuid())
   dateKey            String
+  mealSlot           String     @default("snack")
   status             String     @default("draft")
   imageUrl           String?
   compressedImageUrl String?

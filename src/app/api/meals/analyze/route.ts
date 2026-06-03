@@ -7,6 +7,7 @@ import { requireApiUser, unauthorized } from "@/lib/auth";
 import { isDateKey, todayKey } from "@/lib/date";
 
 export const runtime = "nodejs";
+const MEAL_SLOTS = new Set(["breakfast", "lunch", "dinner", "snack"]);
 
 export async function POST(request: NextRequest) {
   const requestStartedAt = Date.now();
@@ -16,12 +17,14 @@ export async function POST(request: NextRequest) {
   const form = await request.formData();
   const file = form.get("image");
   const date = String(form.get("dateKey") || todayKey());
+  const mealSlot = String(form.get("mealSlot") || "snack");
   const userDescription = String(form.get("userDescription") || "").trim().slice(0, 1000);
   const draftId = String(form.get("draftId") || "").trim();
   const clientCompressionMs = numberFromForm(form.get("clientCompressionMs"), 60_000);
   const clientOriginalBytes = numberFromForm(form.get("clientOriginalBytes"), 100 * 1024 * 1024);
 
   if (!isDateKey(date)) return NextResponse.json({ error: "日期格式不正确" }, { status: 400 });
+  if (!MEAL_SLOTS.has(mealSlot)) return NextResponse.json({ error: "餐别不正确" }, { status: 400 });
   if (!(file instanceof File) && !userDescription) {
     return NextResponse.json({ error: "请上传餐食图片或填写餐食描述" }, { status: 400 });
   }
@@ -95,6 +98,7 @@ export async function POST(request: NextRequest) {
       const entry = await prisma.mealEntry.create({
         data: {
           dateKey: date,
+          mealSlot,
           status: "draft",
           imageUrl,
           compressedImageUrl,
@@ -146,6 +150,7 @@ export async function POST(request: NextRequest) {
     const databaseStartedAt = Date.now();
     const entryData = {
       dateKey: date,
+      mealSlot,
       status: "draft",
       imageUrl,
       compressedImageUrl,

@@ -28,7 +28,7 @@ export default function LoginForm() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#f7eff4] px-5 py-8 text-slate-900">
+    <main className="wellness-shell flex min-h-screen items-center justify-center px-5 py-8 text-slate-900">
       <form onSubmit={submit} className="app-card w-full max-w-sm p-6">
         <p className="text-xs font-semibold text-fuchsia-600">TRACKER</p>
         <h1 className="mb-6 mt-1 text-2xl font-bold text-slate-950">登录 Food Deficit</h1>

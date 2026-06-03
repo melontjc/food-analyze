@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 
 const useSchema = z.object({
   dateKey: z.string().optional(),
+  mealSlot: z.enum(["breakfast", "lunch", "dinner", "snack"]),
   saveAsDefault: z.boolean().default(false),
   items: z
     .array(
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
       prisma.mealEntry.create({
         data: {
           dateKey,
+          mealSlot: parsed.data.mealSlot,
           status: "confirmed",
           compressedImageUrl: preset.imageUrl,
           userDescription: `常用餐食：${preset.name}`,
@@ -142,6 +144,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     const draftEntry = await transaction.mealEntry.create({
       data: {
         dateKey,
+        mealSlot: parsed.data.mealSlot,
         status: "draft",
         compressedImageUrl: preset.imageUrl,
         userDescription: `常用餐食克数调整：${preset.name}`,
