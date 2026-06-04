@@ -25,6 +25,7 @@ import {
   RefreshCw,
   Save,
   Send,
+  Sparkles,
   Target,
   Trash2,
   Upload,
@@ -35,6 +36,7 @@ import {
 } from "lucide-react";
 
 type MealSlot = "breakfast" | "lunch" | "dinner" | "snack";
+type MealPreference = "homemade" | "takeout" | "light" | "sauce";
 type NutritionSource = {
   id: string;
   name: string;
@@ -139,8 +141,10 @@ type Dashboard = {
 };
 
 type AppTab = "home" | "quick" | "capture" | "trends" | "more";
+type TabTransitionDirection = "forward" | "back" | "none";
 type AnalysisView = "calories" | "weight" | "meals" | "correlation";
 type AnalysisPhase = "idle" | "compressing" | "recognizing";
+type QuickStudioView = "presets" | "library" | "ai";
 type MealAnalysisTimings = {
   clientCompressionMs: number;
   serverCompressionMs: number;
@@ -160,18 +164,30 @@ type ConnectionStatus = {
   intervals: { connected: boolean; athleteId: string };
 };
 
-const APP_TABS = new Set<AppTab>(["home", "quick", "capture", "trends", "more"]);
+const TAB_ORDER: AppTab[] = ["home", "quick", "capture", "trends", "more"];
+const APP_TABS = new Set<AppTab>(TAB_ORDER);
 const MEAL_SLOTS: Array<{ key: MealSlot; label: string; time: string; image: string }> = [
   { key: "breakfast", label: "早餐", time: "08:00", image: "/illustrations/meal-breakfast.png" },
   { key: "lunch", label: "午餐", time: "12:30", image: "/illustrations/meal-lunch.png" },
   { key: "dinner", label: "晚餐", time: "18:30", image: "/illustrations/meal-dinner.png" },
   { key: "snack", label: "加餐", time: "15:30", image: "/illustrations/meal-snack.png" }
 ];
+const MEAL_PREFERENCES: Array<{ key: MealPreference; label: string; hint: string }> = [
+  { key: "homemade", label: "自制", hint: "家常做法" },
+  { key: "takeout", label: "外卖", hint: "门店估算" },
+  { key: "light", label: "清淡", hint: "少油少糖" },
+  { key: "sauce", label: "酱料多", hint: "额外油盐" }
+];
 const ANALYSIS_TABS: Array<{ key: AnalysisView; label: string }> = [
   { key: "calories", label: "热量" },
   { key: "weight", label: "体重" },
   { key: "meals", label: "餐别" },
   { key: "correlation", label: "相关性" }
+];
+const QUICK_STUDIO_TABS: Array<{ key: QuickStudioView; label: string; hint: string }> = [
+  { key: "presets", label: "常用模板", hint: "快速计入" },
+  { key: "library", label: "营养库", hint: "成分表" },
+  { key: "ai", label: "AI 新建", hint: "自动拆解" }
 ];
 const CORRELATION_WINDOW_DAYS = 14;
 const DEFAULT_SLOT_TARGET_KCAL = 450;
@@ -196,9 +212,15 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   const [presetAddingId, setPresetAddingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<AppTab>("home");
+  const [leavingTab, setLeavingTab] = useState<AppTab | null>(null);
+  const [tabDirection, setTabDirection] = useState<TabTransitionDirection>("none");
   const [mealSlot, setMealSlot] = useState<MealSlot>(() => defaultMealSlot());
+  const [mealPreferences, setMealPreferences] = useState<MealPreference[]>([]);
   const [pendingPresetUse, setPendingPresetUse] = useState<{ preset: MealPreset; items: Array<{ id: string; grams: number | null }> } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const activeTabRef = useRef<AppTab>("home");
+  const tabInitializedRef = useRef(false);
+  const tabTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/dashboard?date=${dateKey}`);
@@ -252,26 +274,67 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     };
   }, [previewUrl]);
 
+  const applyTab = useCallback((nextTab: AppTab) => {
+    const currentTab = activeTabRef.current;
+    if (tabTransitionTimerRef.current) {
+      clearTimeout(tabTransitionTimerRef.current);
+      tabTransitionTimerRef.current = null;
+    }
+
+    if (!tabInitializedRef.current) {
+      tabInitializedRef.current = true;
+      activeTabRef.current = nextTab;
+      setActiveTab(nextTab);
+      setLeavingTab(null);
+      setTabDirection("none");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    if (nextTab === currentTab) {
+      setActiveTab(nextTab);
+      setLeavingTab(null);
+      setTabDirection("none");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    const direction = tabTransitionDirection(currentTab, nextTab);
+    activeTabRef.current = nextTab;
+    setTabDirection(direction);
+    setLeavingTab(currentTab);
+    setActiveTab(nextTab);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    tabTransitionTimerRef.current = setTimeout(() => {
+      setLeavingTab(null);
+      tabTransitionTimerRef.current = null;
+    }, 180);
+  }, []);
+
   useEffect(() => {
     function updateTabFromHash() {
       const nextTab = window.location.hash.slice(1) as AppTab;
-      setActiveTab(APP_TABS.has(nextTab) ? nextTab : "home");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      applyTab(APP_TABS.has(nextTab) ? nextTab : "home");
     }
 
     updateTabFromHash();
     window.addEventListener("hashchange", updateTabFromHash);
     return () => window.removeEventListener("hashchange", updateTabFromHash);
+  }, [applyTab]);
+
+  useEffect(() => {
+    return () => {
+      if (tabTransitionTimerRef.current) clearTimeout(tabTransitionTimerRef.current);
+    };
   }, []);
 
   const navigateTo = useCallback((tab: AppTab) => {
     if (window.location.hash === `#${tab}`) {
-      setActiveTab(tab);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      applyTab(tab);
       return;
     }
     window.location.hash = tab;
-  }, []);
+  }, [applyTab]);
 
   function chooseFile(file: File) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -283,12 +346,22 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     setError("");
   }
 
+  const toggleMealPreference = useCallback((preference: MealPreference) => {
+    setMealPreferences((current) =>
+      current.includes(preference) ? current.filter((item) => item !== preference) : [...current, preference]
+    );
+  }, []);
+
   async function analyze() {
     const description = mealContext.trim();
     if (!selectedFile && !description) {
       setError("请上传餐食图片或填写餐食描述");
       return;
     }
+    const preferenceContext = mealPreferences.length
+      ? `用户选择的识别偏好：${mealPreferences.map(mealPreferenceLabel).join("、")}。请结合这些偏好估算做法、油脂、酱料和份量。`
+      : "";
+    const analysisDescription = [description, preferenceContext].filter(Boolean).join("\n");
 
     setLoading(true);
     setAnalysisPhase(selectedFile ? "compressing" : "recognizing");
@@ -310,7 +383,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     }
     form.append("dateKey", dateKey);
     form.append("mealSlot", mealSlot);
-    form.append("userDescription", description);
+    form.append("userDescription", analysisDescription);
     if (analysisDraftId) form.append("draftId", analysisDraftId);
 
     let response: Response;
@@ -370,6 +443,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     setDraft(null);
     setAnalysisDraftId(null);
     setMealContext("");
+    setMealPreferences([]);
     setSelectedFile(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
@@ -489,69 +563,81 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
     return Math.max(0, Math.round((1 - draft.compressedBytes / draft.originalBytes) * 100));
   }, [draft]);
 
+  function renderTab(tab: AppTab) {
+    return (
+      <>
+        {tab === "home" ? (
+          <HomeDashboard
+            dashboard={dashboard}
+            dateKey={dateKey}
+            weightInput={weightInput}
+            weightSaving={weightSaving}
+            savingPresetId={presetSavingId}
+            onDate={setDateKey}
+            onWeight={setWeightInput}
+            onSaveWeight={saveWeight}
+            onSavePreset={savePreset}
+            onNavigate={navigateTo}
+          />
+        ) : null}
+        {tab === "capture" ? (
+          <CapturePage
+            mealSlot={mealSlot}
+            mealPreferences={mealPreferences}
+            inputRef={inputRef}
+            loading={loading}
+            analysisPhase={analysisPhase}
+            selectedFile={selectedFile}
+            previewUrl={previewUrl}
+            mealContext={mealContext}
+            error={error}
+            hasDraft={Boolean(draft || analysisDraftId)}
+            draftContent={draft ? <DraftCard draft={draft} kcal={kcal} compression={compression} timings={analysisTimings} onKcal={setKcal} onGrams={updateDraftItemGrams} onConfirm={confirmDraft} /> : null}
+            onMealSlot={setMealSlot}
+            onPreference={toggleMealPreference}
+            onChoose={chooseFile}
+            onPick={() => inputRef.current?.click()}
+            onContext={setMealContext}
+            onAnalyze={analyze}
+          />
+        ) : null}
+        {tab === "quick" ? (
+          <QuickPresetsCard
+            presets={presets}
+            addingId={presetAddingId}
+            onUse={requestPresetUse}
+            onDelete={deletePreset}
+            onReload={loadPresets}
+            onError={setError}
+          />
+        ) : null}
+        {tab === "trends" ? (
+          <AnalysisPage dashboard={dashboard} />
+        ) : null}
+        {tab === "more" ? (
+          <AppTabSection eyebrow="Profile" title="我的" description="管理数据源、同步状态和连接设置。">
+            <MorePage dashboard={dashboard} syncing={syncing} onSync={syncNow} />
+          </AppTabSection>
+        ) : null}
+        {tab !== "capture" && error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+      </>
+    );
+  }
+
   return (
     <main className="wellness-shell text-slate-900">
       <div className="wellness-app">
         <AppHeader dashboard={dashboard} onNavigate={navigateTo} />
         <section className="px-4 pb-4">
-          <div key={activeTab} className="app-tab-enter space-y-4">
-            {activeTab === "home" ? (
-              <HomeDashboard
-                dashboard={dashboard}
-                dateKey={dateKey}
-                weightInput={weightInput}
-                weightSaving={weightSaving}
-                savingPresetId={presetSavingId}
-                onDate={setDateKey}
-                onWeight={setWeightInput}
-                onSaveWeight={saveWeight}
-                onSavePreset={savePreset}
-                onNavigate={navigateTo}
-              />
+          <div className={leavingTab ? "app-tab-stage app-tab-stage-transitioning" : "app-tab-stage"}>
+            {leavingTab ? (
+              <div key={`leaving-${leavingTab}`} className={`app-tab-panel app-tab-exit app-tab-exit-${tabDirection} space-y-4`}>
+                {renderTab(leavingTab)}
+              </div>
             ) : null}
-            {activeTab === "capture" ? (
-              <AppTabSection eyebrow="Meal Vision" title="记一餐" description="上传图片或填写描述，确认热量后再计入今日统计。">
-                <div className="space-y-4">
-                  <MealSlotSelector value={mealSlot} onChange={setMealSlot} />
-                  <UploadPanel
-                    inputRef={inputRef}
-                    loading={loading}
-                    analysisPhase={analysisPhase}
-                    selectedFile={selectedFile}
-                    previewUrl={previewUrl}
-                    mealContext={mealContext}
-                    error={error}
-                    onChoose={chooseFile}
-                    onPick={() => inputRef.current?.click()}
-                    onContext={setMealContext}
-                    onAnalyze={analyze}
-                    hasDraft={Boolean(draft || analysisDraftId)}
-                    draftContent={draft ? <DraftCard draft={draft} kcal={kcal} compression={compression} timings={analysisTimings} onKcal={setKcal} onGrams={updateDraftItemGrams} onConfirm={confirmDraft} /> : null}
-                  />
-                </div>
-              </AppTabSection>
-            ) : null}
-            {activeTab === "quick" ? (
-              <AppTabSection eyebrow="Plan" title="计划" description="维护常用餐食与个人营养库，让每日记录更轻松。">
-                <QuickPresetsCard
-                  presets={presets}
-                  addingId={presetAddingId}
-                  onUse={requestPresetUse}
-                  onDelete={deletePreset}
-                  onReload={loadPresets}
-                  onError={setError}
-                />
-              </AppTabSection>
-            ) : null}
-            {activeTab === "trends" ? (
-              <AnalysisPage dashboard={dashboard} />
-            ) : null}
-            {activeTab === "more" ? (
-              <AppTabSection eyebrow="Profile" title="我的" description="管理数据源、同步状态和连接设置。">
-                <MorePage dashboard={dashboard} syncing={syncing} onSync={syncNow} />
-              </AppTabSection>
-            ) : null}
-            {activeTab !== "capture" && error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+            <div key={`active-${activeTab}`} className={`app-tab-panel app-tab-enter app-tab-enter-${tabDirection} space-y-4`}>
+              {renderTab(activeTab)}
+            </div>
           </div>
         </section>
         {pendingPresetUse ? (
@@ -1084,7 +1170,9 @@ function MissionMetric({ dot, label, value }: { dot: string; label: string; valu
   );
 }
 
-function UploadPanel({
+function CapturePage({
+  mealSlot,
+  mealPreferences,
   inputRef,
   loading,
   analysisPhase,
@@ -1092,9 +1180,78 @@ function UploadPanel({
   previewUrl,
   mealContext,
   error,
+  hasDraft,
+  draftContent,
+  onMealSlot,
+  onPreference,
   onChoose,
   onPick,
   onContext,
+  onAnalyze
+}: {
+  mealSlot: MealSlot;
+  mealPreferences: MealPreference[];
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  loading: boolean;
+  analysisPhase: AnalysisPhase;
+  selectedFile: File | null;
+  previewUrl: string | null;
+  mealContext: string;
+  error: string;
+  hasDraft: boolean;
+  draftContent: React.ReactNode;
+  onMealSlot: (value: MealSlot) => void;
+  onPreference: (value: MealPreference) => void;
+  onChoose: (file: File) => void;
+  onPick: () => void;
+  onContext: (value: string) => void;
+  onAnalyze: () => void;
+}) {
+  return (
+    <section className="capture-page">
+      <div className="capture-hero">
+        <div className="capture-hero-copy">
+          <p>Meal Vision</p>
+          <h1>记一餐</h1>
+          <span>上传图片或填写描述，AI 先生成草稿，确认热量后再计入今日统计。</span>
+        </div>
+        <span className="capture-ai-badge"><Sparkles size={14} />AI 识别</span>
+      </div>
+      <MealSlotSelector value={mealSlot} onChange={onMealSlot} />
+      <UploadPanel
+        inputRef={inputRef}
+        loading={loading}
+        analysisPhase={analysisPhase}
+        selectedFile={selectedFile}
+        previewUrl={previewUrl}
+        mealContext={mealContext}
+        mealPreferences={mealPreferences}
+        error={error}
+        onChoose={onChoose}
+        onPick={onPick}
+        onContext={onContext}
+        onPreference={onPreference}
+        onAnalyze={onAnalyze}
+        hasDraft={hasDraft}
+        draftContent={draftContent}
+      />
+    </section>
+  );
+}
+
+function UploadPanel({
+  inputRef,
+  loading,
+  analysisPhase,
+  selectedFile,
+  previewUrl,
+  mealContext,
+  mealPreferences,
+  error,
+  onChoose,
+  onPick,
+  onContext,
+  onPreference,
   onAnalyze,
   hasDraft,
   draftContent
@@ -1105,10 +1262,12 @@ function UploadPanel({
   selectedFile: File | null;
   previewUrl: string | null;
   mealContext: string;
+  mealPreferences: MealPreference[];
   error: string;
   onChoose: (file: File) => void;
   onPick: () => void;
   onContext: (value: string) => void;
+  onPreference: (value: MealPreference) => void;
   onAnalyze: () => void;
   hasDraft: boolean;
   draftContent: React.ReactNode;
@@ -1116,13 +1275,13 @@ function UploadPanel({
   const canAnalyze = Boolean(selectedFile || mealContext.trim());
 
   return (
-    <div className="panel p-4 sm:p-5">
-      <div className="mb-4 flex items-center justify-between">
+    <section className="capture-studio-card">
+      <div className="capture-card-head">
         <div>
-          <p className="text-sm font-medium text-fuchsia-600">Meal Vision</p>
-          <h3 className="text-lg font-semibold">上传图片或文字描述</h3>
+          <p>AI Scanner</p>
+          <h2>上传图片或文字描述</h2>
         </div>
-        <Camera className="text-slate-400" size={22} />
+        <span><Camera size={17} />智能识别</span>
       </div>
       <input
         ref={inputRef}
@@ -1139,53 +1298,79 @@ function UploadPanel({
         onClick={onPick}
         disabled={loading}
         aria-label={previewUrl ? "替换餐食图片" : "上传餐食图片"}
-        className={`relative flex min-h-64 w-full flex-col items-center justify-center overflow-hidden rounded-lg border text-fuchsia-700 transition disabled:opacity-70 ${
-          previewUrl
-            ? "border-slate-200 bg-white hover:border-fuchsia-400"
-            : "gap-4 border-dashed border-fuchsia-300 bg-fuchsia-50 px-6 py-12 hover:border-fuchsia-500 hover:bg-fuchsia-100"
-        }`}
+        className={previewUrl ? "capture-scanner capture-scanner-preview" : "capture-scanner"}
       >
+        <span className="capture-frame-corner capture-frame-corner-tl" />
+        <span className="capture-frame-corner capture-frame-corner-tr" />
+        <span className="capture-frame-corner capture-frame-corner-bl" />
+        <span className="capture-frame-corner capture-frame-corner-br" />
         {previewUrl ? (
           <>
-            <div className="relative flex h-72 w-full items-center justify-center bg-slate-50">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={previewUrl} alt="待分析餐食" className="max-h-full w-full object-contain" />
-              <span className="absolute bottom-3 rounded-full bg-slate-950/70 px-3 py-1.5 text-xs font-medium text-white">轻触替换图片</span>
-            </div>
-            <div className="flex w-full items-center justify-between gap-3 border-t border-slate-200 px-3 py-2 text-sm text-slate-500">
-              <span className="truncate">{selectedFile?.name}</span>
-              <span className="shrink-0">{selectedFile ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB` : ""}</span>
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={previewUrl} alt="待分析餐食" className="capture-preview-image" />
+            <span className="capture-replace-pill">轻触替换图片</span>
+            <span className="capture-file-meta">
+              <small>{selectedFile?.name || "已选择图片"}</small>
+              <small>{selectedFile ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB` : ""}</small>
+            </span>
             {loading ? (
-              <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/80 text-fuchsia-700">
+              <span className="capture-loading-layer">
                 <CloudCog size={52} className="animate-pulse" />
-                <span className="text-xl font-semibold">{analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图"}</span>
-                <span className="text-xs text-fuchsia-500">{analysisPhase === "compressing" ? "正在减少图片体积，节省上传时间" : "正在识别食物种类并估测重量"}</span>
+                <strong>{analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图"}</strong>
+                <small>{analysisPhase === "compressing" ? "正在减少图片体积，节省上传时间" : "正在识别食物种类并估测重量"}</small>
               </span>
             ) : null}
           </>
         ) : (
           <>
-            {loading ? <CloudCog size={52} className="animate-pulse" /> : <Upload size={58} />}
-            <span className="text-3xl font-semibold">{loading ? (analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图") : "上传图片"}</span>
-            <span className="text-sm text-fuchsia-500">可选图，也可直接填写文字描述</span>
+            <span className="capture-scan-line" />
+            <span className="capture-upload-orb">
+              {loading ? <CloudCog size={44} className="animate-pulse" /> : <Upload size={46} />}
+            </span>
+            <strong>{loading ? (analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图") : "上传图片"}</strong>
+            <small>{loading ? "请稍等，正在为草稿做准备" : "图片优先，也支持只写文字描述"}</small>
           </>
         )}
       </button>
 
-      {draftContent ? <div className="mt-4">{draftContent}</div> : null}
+      <div className="capture-preference-card">
+        <div className="capture-block-title">
+          <p>识别偏好</p>
+          <span>帮助 AI 判断做法、油脂和份量</span>
+        </div>
+        <div className="capture-preference-list">
+          {MEAL_PREFERENCES.map((item) => {
+            const active = mealPreferences.includes(item.key);
+            return (
+              <button
+                type="button"
+                key={item.key}
+                onClick={() => onPreference(item.key)}
+                aria-pressed={active}
+                className={active ? "capture-preference-chip capture-preference-chip-active" : "capture-preference-chip"}
+              >
+                <strong>{item.label}</strong>
+                <small>{item.hint}</small>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-      <label className="mt-4 block">
-        <span className="mb-2 block text-sm font-medium text-slate-700">补充说明</span>
+      <label className="capture-text-card">
+        <span className="capture-block-title">
+          <p>文字补充</p>
+          <span>重量、做法、店铺和规格越具体越好</span>
+        </span>
         <textarea
           value={mealContext}
           onChange={(event) => onContext(event.target.value)}
           rows={4}
-          className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-fuchsia-500 focus:ring-2 focus:ring-fuchsia-100"
-          placeholder="例如：红薯 200g，通过空气炸锅烤制；米饭约 180g；麦当劳板烧鸡腿堡一份；海底捞番茄锅里捞出的牛肉约 120g"
+          className="capture-textarea"
+          placeholder="例如：米饭 180g，鸡胸肉 150g，少油自制。"
         />
       </label>
-      <p className="mt-2 text-xs leading-5 text-slate-500">
+      <p className="capture-help">
         {hasDraft
           ? "识别不准确时，可补充食物名称、重量、做法或店铺，再让 AI 修正草稿。只有确认 kcal 后才会计入统计。"
           : "支持图片加说明，也支持只写文字描述。补充重量、做法或店铺可提高准确度；分析后会先生成草稿，确认 kcal 才计入统计。"}
@@ -1193,13 +1378,14 @@ function UploadPanel({
       <button
         onClick={onAnalyze}
         disabled={loading || !canAnalyze}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-600 px-5 py-4 text-base font-semibold text-white shadow-sm shadow-fuchsia-600/20 transition hover:bg-fuchsia-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        className="capture-cta"
       >
         {loading ? <CloudCog size={19} className="animate-pulse" /> : <Send size={19} />}
-        {loading ? (analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图") : hasDraft ? "根据说明重新识别" : "发送并分析餐食"}
+        {loading ? (analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图") : hasDraft ? "根据说明重新识别" : "开始 AI 识别"}
       </button>
-      {error ? <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
-    </div>
+      {error ? <p className="capture-error">{error}</p> : null}
+      {draftContent ? <div className="capture-draft-wrap">{draftContent}</div> : null}
+    </section>
   );
 }
 
@@ -1287,57 +1473,59 @@ function DraftCard({
   onConfirm: () => void;
 }) {
   return (
-    <div className="w-full max-w-full overflow-hidden rounded-lg border border-fuchsia-100 bg-fuchsia-50/40 p-3 sm:p-4">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-amber-600">待确认</p>
-          <h3 className="text-lg font-semibold">餐食草稿</h3>
-          <p className="mt-1 text-xs text-slate-500">
+    <div className="capture-draft-card">
+      <div className="capture-draft-head">
+        <div>
+          <p>待确认</p>
+          <h3>餐食草稿</h3>
+          <span>
             {draft.confidence == null ? "置信度暂无" : `置信度 ${Math.round(draft.confidence * 100)}%`}
             {compression == null ? "" : ` · 图片缩小约 ${compression}%`}
-          </p>
-          {timings ? <p className="mt-1 text-xs text-slate-400">总耗时 {seconds(timings.totalServerMs + timings.clientCompressionMs)} · AI 识图 {seconds(timings.openAiMs)} · 上传 {seconds(timings.blobUploadMs)}</p> : null}
+          </span>
+          {timings ? <span>总耗时 {seconds(timings.totalServerMs + timings.clientCompressionMs)} · AI 识图 {seconds(timings.openAiMs)} · 上传 {seconds(timings.blobUploadMs)}</span> : null}
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-          <input value={kcal} onChange={(event) => onKcal(event.target.value)} className="h-11 w-full min-w-0 rounded-lg border border-slate-200 px-3 text-right font-semibold outline-none focus:border-fuchsia-500 sm:h-10 sm:w-28" inputMode="numeric" />
-          <button onClick={onConfirm} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-600 px-4 font-semibold text-white transition hover:bg-fuchsia-700 sm:h-10 sm:w-auto">
+        <div className="capture-draft-actions">
+          <label>
+            <input value={kcal} onChange={(event) => onKcal(event.target.value)} inputMode="numeric" aria-label="最终热量" />
+            <span>kcal</span>
+          </label>
+          <button onClick={onConfirm}>
             <Check size={17} />
             确认
           </button>
         </div>
       </div>
-      <div className="grid gap-2">
+      <div className="capture-draft-list">
         {draft.items.map((item) => (
-          <div key={item.id} className="min-w-0 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
-            <div className="flex justify-between gap-3 font-medium">
-              <span className="min-w-0 truncate">{item.name}</span>
-              <span className="shrink-0">{item.kcal} kcal</span>
+          <div key={item.id} className="capture-draft-item">
+            <div className="capture-draft-item-title">
+              <strong>{item.name}</strong>
+              <span>{item.kcal} kcal</span>
             </div>
-            <p className="mt-1 text-sm text-slate-500">{item.portion || "AI 已识别食物种类"}</p>
-            <div className="mt-2 flex items-center gap-2">
-              <label htmlFor={`draft-grams-${item.id}`} className="shrink-0 text-xs font-medium text-slate-500">实际重量</label>
-              <div className="flex h-10 min-w-0 flex-1 items-center rounded-lg border border-slate-200 bg-white px-2">
+            <p>{item.portion || "AI 已识别食物种类"}</p>
+            <div className="capture-draft-grams">
+              <label htmlFor={`draft-grams-${item.id}`}>实际重量</label>
+              <div>
                 <input
                   id={`draft-grams-${item.id}`}
                   value={item.grams ?? ""}
                   onChange={(event) => onGrams(item.id, event.target.value)}
                   inputMode="decimal"
                   placeholder="待补充"
-                  className="min-w-0 flex-1 bg-transparent text-right text-sm font-semibold outline-none"
                 />
-                <span className="ml-1 text-xs text-slate-400">g</span>
+                <span>g</span>
               </div>
             </div>
-            <p className={`mt-2 text-xs ${item.nutritionSource ? "text-fuchsia-700" : "text-slate-400"}`}>
+            <small className={item.nutritionSource ? "capture-draft-source capture-draft-source-ready" : "capture-draft-source"}>
               {item.nutritionSource
                 ? `已引用个人营养库：${item.nutritionSource.name} · ${item.nutritionSource.kcalPer100g} kcal/100g`
                 : "AI 估测重量，可按实际情况调整"}
-            </p>
+            </small>
           </div>
         ))}
       </div>
-      {draft.notes && !looksMojibake(draft.notes) ? <p className="mt-3 text-sm text-slate-600">{draft.notes}</p> : null}
-      {draft.uncertainty && !looksMojibake(draft.uncertainty) ? <p className="mt-2 text-sm text-amber-700">{draft.uncertainty}</p> : null}
+      {draft.notes && !looksMojibake(draft.notes) ? <p className="capture-draft-note">{draft.notes}</p> : null}
+      {draft.uncertainty && !looksMojibake(draft.uncertainty) ? <p className="capture-draft-warning">{draft.uncertainty}</p> : null}
     </div>
   );
 }
@@ -1978,7 +2166,7 @@ function QuickPresetsCard({
   const [grams, setGrams] = useState<Record<string, string>>({});
   const [editableItems, setEditableItems] = useState<Record<string, MealPresetItem[]>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  const [studioView, setStudioView] = useState<QuickStudioView>("presets");
   const [createDescription, setCreateDescription] = useState("");
   const [createFile, setCreateFile] = useState<File | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -1986,7 +2174,6 @@ function QuickPresetsCard({
   const [nutritionReview, setNutritionReview] = useState<{ presetId: string; itemIndex: number; source: NutritionSourceDraft } | null>(null);
   const [nutritionUploading, setNutritionUploading] = useState("");
   const [nutritionSources, setNutritionSources] = useState<NutritionSource[]>([]);
-  const [libraryCreating, setLibraryCreating] = useState(false);
   const [libraryDraft, setLibraryDraft] = useState<NutritionSourceDraft>(emptyNutritionSource());
   const [libraryAnalyzing, setLibraryAnalyzing] = useState(false);
   const [librarySaving, setLibrarySaving] = useState(false);
@@ -2004,6 +2191,12 @@ function QuickPresetsCard({
       cancelled = true;
     };
   }, []);
+
+  const createPreviewUrl = useMemo(() => createFile ? URL.createObjectURL(createFile) : null, [createFile]);
+
+  useEffect(() => () => {
+    if (createPreviewUrl) URL.revokeObjectURL(createPreviewUrl);
+  }, [createPreviewUrl]);
 
   function togglePreset(preset: MealPreset) {
     const nextId = expandedId === preset.id ? null : preset.id;
@@ -2166,7 +2359,7 @@ function QuickPresetsCard({
     if (!response.ok) return onError(data.error || "食物保存失败，请检查名称和每 100g 热量");
     setNutritionSources((current) => [data.source, ...current]);
     setLibraryDraft(emptyNutritionSource());
-    setLibraryCreating(false);
+    setStudioView("library");
   }
 
   async function analyzeNewPreset() {
@@ -2212,7 +2405,7 @@ function QuickPresetsCard({
     const data = await response.json().catch(() => ({}));
     setSavingId(null);
     if (!response.ok) return onError(data.error || "新建模板失败");
-    setCreating(false);
+    setStudioView("presets");
     setCreateDescription("");
     setCreateFile(null);
     setNewPreset(null);
@@ -2221,28 +2414,131 @@ function QuickPresetsCard({
 
   const expandedPreset = presets.find((preset) => preset.id === expandedId) || null;
   const expandedItems = expandedPreset ? editableItems[expandedPreset.id] || expandedPreset.items : [];
+  const favoritePreset = presets.reduce<MealPreset | null>((best, preset) => {
+    if (!best) return preset;
+    return preset.usageCount > best.usageCount ? preset : best;
+  }, null);
+  const hasCreateInput = Boolean(createFile || createDescription.trim());
 
   return (
-    <section className="panel p-4 sm:p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-fuchsia-600">Quick Meals</p>
-          <h3 className="text-lg font-semibold">常用餐食</h3>
+    <section className="plan-studio-page">
+      <div className="plan-studio-hero">
+        <div className="plan-studio-copy">
+          <p>MEAL PLAN STUDIO</p>
+          <h1>计划</h1>
+          <span>管理常用餐食、个人营养库和 AI 模板拆解。</span>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <span className="rounded-full bg-fuchsia-50 px-2.5 py-1 text-xs font-medium text-fuchsia-700">{presets.length} 个模板</span>
-          <button onClick={() => setLibraryCreating((value) => !value)} className="flex min-h-11 items-center gap-1.5 rounded-lg border border-fuchsia-100 bg-white px-3 text-xs font-semibold text-fuchsia-700">
-            {libraryCreating ? <X size={15} /> : <Plus size={15} />}
-            {libraryCreating ? "取消添加" : "添加食物"}
-          </button>
-          <button onClick={() => setCreating((value) => !value)} className="flex min-h-11 items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-xs font-semibold text-white">
-            {creating ? <X size={15} /> : <Plus size={15} />}
-            {creating ? "取消" : "新建模板"}
-          </button>
-        </div>
+        <button type="button" onClick={() => setStudioView("ai")} className="plan-hero-action">
+          <Sparkles size={15} />
+          AI 新建
+        </button>
       </div>
-      {libraryCreating ? (
-        <BottomSheet title="添加食物" onClose={() => setLibraryCreating(false)}>
+
+      <div className="plan-stat-grid">
+        <button type="button" onClick={() => setStudioView("presets")} className="plan-stat-card">
+          <span><BookmarkPlus size={15} /></span>
+          <p>模板</p>
+          <strong>{presets.length}</strong>
+        </button>
+        <button type="button" onClick={() => setStudioView("library")} className="plan-stat-card">
+          <span><Database size={15} /></span>
+          <p>营养库</p>
+          <strong>{nutritionSources.length}</strong>
+        </button>
+        <button type="button" onClick={() => favoritePreset && onUse(favoritePreset, configuredItems(favoritePreset))} disabled={!favoritePreset} className="plan-stat-card plan-stat-card-wide">
+          <span><Utensils size={15} /></span>
+          <p>最近常用</p>
+          <strong>{favoritePreset?.name || "待建立"}</strong>
+        </button>
+      </div>
+
+      <div className="plan-segmented" role="tablist" aria-label="计划页功能">
+        {QUICK_STUDIO_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={studioView === tab.key}
+            onClick={() => setStudioView(tab.key)}
+            className={studioView === tab.key ? "plan-segmented-item plan-segmented-item-active" : "plan-segmented-item"}
+          >
+            <strong>{tab.label}</strong>
+            <small>{tab.hint}</small>
+          </button>
+        ))}
+      </div>
+
+      {studioView === "presets" ? (
+        <div className="plan-template-section">
+          <div className="plan-section-head">
+            <div>
+              <p>QUICK MEALS</p>
+              <h2>常用模板</h2>
+            </div>
+            <button type="button" onClick={() => setStudioView("ai")} className="plan-soft-button">
+              <Plus size={15} />
+              新建
+            </button>
+          </div>
+          {presets.length ? (
+            <div className="plan-template-list">
+              {presets.map((preset) => {
+                const expanded = expandedId === preset.id;
+                return (
+                  <article key={preset.id} className="plan-template-card">
+                    <div className="plan-template-top">
+                      <MealThumbnail url={preset.imageUrl} label={preset.name} compact />
+                      <div className="plan-template-copy">
+                        <div className="plan-template-title-row">
+                          <div className="min-w-0">
+                            <h3>{preset.name}</h3>
+                            <p>{preset.items.map((item) => item.portion || item.name).join(" · ") || "已确认餐食"}</p>
+                          </div>
+                          <button type="button" onClick={() => onDelete(preset)} className="plan-icon-danger" aria-label={`删除 ${preset.name}`}>
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                        <div className="plan-template-metrics">
+                          <span>{preset.baseKcal} kcal</span>
+                          <span>{preset.items.length} 项食物</span>
+                          <span>用过 {preset.usageCount} 次</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="plan-template-actions">
+                      <button type="button" onClick={() => togglePreset(preset)} className="plan-secondary-action">
+                        <ChevronDown size={16} className={expanded ? "rotate-180" : ""} />
+                        {expanded ? "正在调整" : "调整克数"}
+                      </button>
+                      <button type="button" onClick={() => onUse(preset, configuredItems(preset))} disabled={addingId === preset.id} className="plan-primary-action">
+                        <Plus size={16} />
+                        {addingId === preset.id ? "计入中" : "快速计入"}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="plan-empty-card">
+              <Sparkles size={18} />
+              <strong>还没有常用餐食</strong>
+              <span>用 AI 新建一个模板，或从今日记录里存为常用。</span>
+              <button type="button" onClick={() => setStudioView("ai")} className="plan-primary-action">开始新建</button>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {studioView === "library" ? (
+        <div className="plan-library-section">
+          <div className="plan-section-head">
+            <div>
+              <p>NUTRITION LIBRARY</p>
+              <h2>个人营养库</h2>
+            </div>
+            <span className="plan-count-pill">{nutritionSources.length} 个食物</span>
+          </div>
           <NutritionLibraryEditor
             source={libraryDraft}
             analyzing={libraryAnalyzing}
@@ -2251,84 +2547,130 @@ function QuickPresetsCard({
             onAnalyze={analyzeLibraryNutrition}
             onSave={saveLibraryNutrition}
           />
-        </BottomSheet>
+          <div className="plan-source-list">
+            {nutritionSources.length ? nutritionSources.slice(0, 10).map((source) => (
+              <div key={source.id} className="plan-source-card">
+                <div>
+                  <strong>{source.name}</strong>
+                  <span>{source.kcalPer100g} kcal / 100g</span>
+                </div>
+                <small>{source.proteinPer100g == null ? "未填蛋白" : `蛋白 ${source.proteinPer100g}g`} · {source.fatPer100g == null ? "未填脂肪" : `脂肪 ${source.fatPer100g}g`}</small>
+              </div>
+            )) : (
+              <div className="plan-empty-card">
+                <Database size={18} />
+                <strong>营养库还空着</strong>
+                <span>上传包装成分表，或手动填写每 100g 热量。</span>
+              </div>
+            )}
+          </div>
+        </div>
       ) : null}
-      {creating ? (
-        <BottomSheet title="新建常用餐食模板" onClose={() => setCreating(false)}>
-          <div className="rounded-lg border border-fuchsia-100 bg-fuchsia-50/50 p-3">
-            <textarea value={createDescription} onChange={(event) => setCreateDescription(event.target.value)} placeholder="例如：早餐，燕麦 50g、每日坚果一包、无糖酸奶 200g" className="min-h-24 w-full rounded-lg border border-slate-200 bg-white p-3 text-sm outline-none focus:border-fuchsia-400" />
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <label className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600">
-                <Upload size={15} />
-                {createFile ? createFile.name : "可选套餐图片"}
-                <input type="file" accept="image/*" className="hidden" onChange={(event) => setCreateFile(event.target.files?.[0] || null)} />
+
+      {studioView === "ai" ? (
+        <div className="plan-ai-section">
+          <div className="capture-card-head">
+            <div>
+              <p>AI TEMPLATE SCANNER</p>
+              <h2>新建餐食模板</h2>
+            </div>
+            <span><Camera size={15} /> 智能拆解</span>
+          </div>
+          <label className={createPreviewUrl ? "plan-ai-scanner plan-ai-scanner-preview" : "plan-ai-scanner"}>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                setCreateFile(event.target.files?.[0] || null);
+                setNewPreset(null);
+              }}
+            />
+            <i className="capture-frame-corner capture-frame-corner-tl" />
+            <i className="capture-frame-corner capture-frame-corner-tr" />
+            <i className="capture-frame-corner capture-frame-corner-bl" />
+            <i className="capture-frame-corner capture-frame-corner-br" />
+            <span className="capture-scan-line" />
+            {createPreviewUrl ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={createPreviewUrl} alt="新建模板预览" className="plan-ai-preview-image" />
+                <span className="capture-replace-pill">点击替换图片</span>
+                <span className="capture-file-meta"><small>{createFile?.name}</small><Upload size={14} /></span>
+              </>
+            ) : (
+              <>
+                <span className="capture-upload-orb"><Upload size={34} /></span>
+                <strong>上传套餐图片</strong>
+                <small>也可以只写文字描述</small>
+              </>
+            )}
+            {analyzing ? (
+              <span className="capture-loading-layer">
+                <Sparkles size={28} />
+                <strong>AI 正在拆解模板</strong>
+                <small>会生成食物项、克数和热量草稿</small>
+              </span>
+            ) : null}
+          </label>
+
+          <label className="plan-ai-text-card">
+            <div className="capture-block-title">
+              <p>文字补充</p>
+              <span>图片不清楚时补充份量、品牌或做法。</span>
+            </div>
+            <textarea
+              value={createDescription}
+              onChange={(event) => {
+                setCreateDescription(event.target.value);
+                if (newPreset) setNewPreset(null);
+              }}
+              placeholder="例如：燕麦 50g，酸奶 200g，每日坚果一包。"
+              className="capture-textarea"
+            />
+          </label>
+
+          <button type="button" onClick={analyzeNewPreset} disabled={analyzing || !hasCreateInput} className="plan-ai-cta">
+            <Send size={17} />
+            {analyzing ? "AI 正在拆解" : newPreset ? "根据说明重新拆解" : "AI 自动拆解"}
+          </button>
+
+          {newPreset ? (
+            <div className="plan-new-preset-card">
+              <div className="plan-new-preset-head">
+                <div>
+                  <p>AI DRAFT</p>
+                  <h3>确认模板草稿</h3>
+                </div>
+                <span>{newPreset.items.reduce((total, item) => total + item.kcal, 0)} kcal</span>
+              </div>
+              <label className="plan-field">
+                <span>模板名称</span>
+                <input value={newPreset.name} onChange={(event) => setNewPreset({ ...newPreset, name: event.target.value })} />
               </label>
-              <button onClick={analyzeNewPreset} disabled={analyzing} className="flex min-h-11 items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-xs font-semibold text-white transition hover:bg-fuchsia-700 disabled:opacity-60">
-                <Send size={15} />
-                {analyzing ? "拆解中" : "AI 自动拆解"}
+              <div className="plan-new-items">
+                {newPreset.items.map((item, index) => (
+                  <div key={item.id} className="plan-new-item">
+                    <PresetItemEditor
+                      item={item}
+                      nutritionSources={nutritionSources}
+                      showGrams
+                      onChange={(patch) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...patch } : current)) })}
+                      onSelectSource={(source) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...bindNutritionSource(current, source) } : current)) })}
+                      onDelete={() => setNewPreset({ ...newPreset, items: newPreset.items.filter((_, itemIndex) => itemIndex !== index) })}
+                    />
+                  </div>
+                ))}
+              </div>
+              <button type="button" onClick={saveNewPreset} disabled={savingId === "new"} className="plan-primary-action plan-save-template">
+                <Save size={16} />
+                {savingId === "new" ? "保存中" : "保存为常用模板"}
               </button>
             </div>
-            {newPreset ? (
-              <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-                <input value={newPreset.name} onChange={(event) => setNewPreset({ ...newPreset, name: event.target.value })} className="h-11 w-full rounded-lg border border-slate-200 px-2 text-sm font-semibold outline-none focus:border-fuchsia-400" />
-                <div className="mt-2 space-y-2">
-                  {newPreset.items.map((item, index) => (
-                    <PresetItemEditor key={item.id} item={item} nutritionSources={nutritionSources} showGrams onChange={(patch) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...patch } : current)) })} onSelectSource={(source) => setNewPreset({ ...newPreset, items: newPreset.items.map((current, itemIndex) => (itemIndex === index ? { ...current, ...bindNutritionSource(current, source) } : current)) })} onDelete={() => setNewPreset({ ...newPreset, items: newPreset.items.filter((_, itemIndex) => itemIndex !== index) })} />
-                  ))}
-                </div>
-                <button onClick={saveNewPreset} disabled={savingId === "new"} className="mt-3 flex min-h-11 items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-xs font-semibold text-white transition hover:bg-fuchsia-700 disabled:opacity-60">
-                  <Save size={15} />
-                  {savingId === "new" ? "保存中" : "保存模板"}
-                </button>
-              </div>
-            ) : null}
-          </div>
-        </BottomSheet>
+          ) : null}
+        </div>
       ) : null}
-      {presets.length ? (
-        <div className="grid gap-3">
-          {presets.map((preset) => {
-            const expanded = expandedId === preset.id;
-            return (
-              <div key={preset.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
-                <div className="flex gap-3">
-                  <MealThumbnail url={preset.imageUrl} label={preset.name} compact />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="truncate font-semibold text-slate-950">{preset.name}</p>
-                        <p className="mt-1 text-sm text-slate-500">{preset.baseKcal} kcal</p>
-                      </div>
-                      <button onClick={() => onDelete(preset)} className="text-slate-400 transition hover:text-red-600" aria-label={`删除 ${preset.name}`}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                    <p className="mt-1 truncate text-xs text-slate-400">{preset.items.map((item) => item.portion || item.name).join(" · ") || "已确认餐食"}</p>
-                  </div>
-                </div>
-                <div className="mt-3 flex gap-2">
-                  <button onClick={() => togglePreset(preset)} className="flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-600">
-                    <ChevronDown size={16} className={expanded ? "rotate-180" : ""} />
-                    {expanded ? "正在调整" : "调整克数"}
-                  </button>
-                  <button
-                    onClick={() => onUse(preset, configuredItems(preset))}
-                    disabled={addingId === preset.id}
-                    className="flex min-h-11 items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-sm font-semibold text-white transition hover:bg-fuchsia-700 disabled:opacity-60"
-                  >
-                    <Plus size={16} />
-                    {addingId === preset.id ? "计入中" : "计入"}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
-          还没有常用餐食。确认餐食后，在今日记录中点击“存为常用”。
-        </div>
-      )}
+
       {expandedPreset ? (
         <BottomSheet title={`调整 ${expandedPreset.name}`} onClose={() => {
           setExpandedId(null);
@@ -2469,30 +2811,31 @@ function NutritionLibraryEditor({
 }) {
   const numberValue = (value: string) => value ? Number(value) : null;
   return (
-    <div className="mb-4 rounded-lg border border-fuchsia-200 bg-fuchsia-50/60 p-3">
-      <div>
-        <p className="font-semibold text-slate-950">添加食物到个人营养库</p>
-        <p className="mt-1 text-xs leading-5 text-slate-500">可手动填写每 100g 热量，也可以上传包装成分表自动识别。保存后即可在模板食物下拉框中复用。</p>
-      </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-6">
-        <input value={source.name} onChange={(event) => onChange({ ...source, name: event.target.value })} placeholder="食物名称" className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm sm:col-span-2" />
-        <input value={source.kcalPer100g || ""} onChange={(event) => onChange({ ...source, kcalPer100g: Number(event.target.value) })} inputMode="decimal" placeholder="kcal / 100g" className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm" />
-        <input value={source.proteinPer100g ?? ""} onChange={(event) => onChange({ ...source, proteinPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="蛋白质 g" className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm" />
-        <input value={source.fatPer100g ?? ""} onChange={(event) => onChange({ ...source, fatPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="脂肪 g" className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm" />
-        <input value={source.carbsPer100g ?? ""} onChange={(event) => onChange({ ...source, carbsPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="碳水 g" className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm" />
-      </div>
-      <textarea value={source.notes || ""} onChange={(event) => onChange({ ...source, notes: event.target.value })} placeholder="可选备注，例如品牌、口味或烹饪方式" rows={2} className="mt-2 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" />
-      <div className="mt-3 flex flex-wrap gap-2">
-        <label className="flex min-h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-fuchsia-200 bg-white px-3 text-xs font-semibold text-fuchsia-700">
+    <div className="plan-library-editor">
+      <div className="plan-library-editor-head">
+        <div>
+          <p>FOOD SOURCE</p>
+          <h3>添加食物到个人营养库</h3>
+          <span>填写每 100g 热量，或上传包装成分表自动识别。</span>
+        </div>
+        <label className="plan-library-upload">
           <FileText size={15} />
           {analyzing ? "识别中" : source.imageUrl ? "替换成分表" : "上传成分表"}
           <input type="file" accept="image/*" className="hidden" disabled={analyzing} onChange={(event) => event.target.files?.[0] && onAnalyze(event.target.files[0])} />
         </label>
-        <button onClick={onSave} disabled={saving || analyzing} className="flex min-h-11 items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-xs font-semibold text-white transition hover:bg-fuchsia-700 disabled:opacity-60">
-          <Save size={15} />
-          {saving ? "保存中" : "保存食物"}
-        </button>
       </div>
+      <div className="plan-library-grid">
+        <input value={source.name} onChange={(event) => onChange({ ...source, name: event.target.value })} placeholder="食物名称" />
+        <input value={source.kcalPer100g || ""} onChange={(event) => onChange({ ...source, kcalPer100g: Number(event.target.value) })} inputMode="decimal" placeholder="kcal / 100g" />
+        <input value={source.proteinPer100g ?? ""} onChange={(event) => onChange({ ...source, proteinPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="蛋白质 g" />
+        <input value={source.fatPer100g ?? ""} onChange={(event) => onChange({ ...source, fatPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="脂肪 g" />
+        <input value={source.carbsPer100g ?? ""} onChange={(event) => onChange({ ...source, carbsPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="碳水 g" />
+      </div>
+      <textarea value={source.notes || ""} onChange={(event) => onChange({ ...source, notes: event.target.value })} placeholder="可选备注，例如品牌、口味或烹饪方式" rows={2} />
+      <button onClick={onSave} disabled={saving || analyzing} className="plan-primary-action plan-library-save">
+        <Save size={15} />
+        {saving ? "保存中" : "保存食物"}
+      </button>
     </div>
   );
 }
@@ -2912,6 +3255,13 @@ function signedDeficitText(value: number | null | undefined) {
   return rounded > 0 ? `-${rounded}` : `+${Math.abs(rounded)}`;
 }
 
+function tabTransitionDirection(current: AppTab, next: AppTab): TabTransitionDirection {
+  const currentIndex = TAB_ORDER.indexOf(current);
+  const nextIndex = TAB_ORDER.indexOf(next);
+  if (currentIndex === -1 || nextIndex === -1 || currentIndex === nextIndex) return "none";
+  return nextIndex > currentIndex ? "forward" : "back";
+}
+
 function defaultMealSlot(): MealSlot {
   const hour = new Date().getHours();
   if (hour < 10) return "breakfast";
@@ -2922,6 +3272,10 @@ function defaultMealSlot(): MealSlot {
 
 function mealSlotLabel(slot: MealSlot) {
   return MEAL_SLOTS.find((item) => item.key === slot)?.label || "加餐";
+}
+
+function mealPreferenceLabel(preference: MealPreference) {
+  return MEAL_PREFERENCES.find((item) => item.key === preference)?.label || preference;
 }
 
 function defaultMealImage(slot: MealSlot) {
