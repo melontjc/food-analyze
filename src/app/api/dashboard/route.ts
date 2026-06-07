@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { requireApiUser, unauthorized } from "@/lib/auth";
 import { getDashboard } from "@/lib/dashboard";
 import { isDateKey, todayKey } from "@/lib/date";
@@ -13,6 +13,8 @@ export async function GET(request: NextRequest) {
   if (process.env.NODE_ENV !== "production" && process.env.LOCAL_MOCK_DATA === "true") {
     return NextResponse.json(getMockDashboard(dateKey));
   }
-  await maybeRefreshDashboardData(dateKey);
+  after(() => {
+    maybeRefreshDashboardData(dateKey).catch(() => undefined);
+  });
   return NextResponse.json(await getDashboard(dateKey));
 }

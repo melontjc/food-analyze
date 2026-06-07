@@ -19,12 +19,17 @@ export async function getDashboard(dateKey: string) {
     prisma.weightEntry.findMany({ where: { dateKey: { in: allDates } } })
   ]);
 
+  const mealsByDate = groupByDate(meals);
+  const activitiesByDate = groupByDate(activities);
+  const burnsByDate = new Map(burns.map((item) => [item.dateKey, item]));
+  const weightsByDate = new Map(weights.map((item) => [item.dateKey, item]));
+
   const buildDay = (key: string) => {
-    const dayMeals = meals.filter((meal) => meal.dateKey === key);
+    const dayMeals = mealsByDate.get(key) || [];
     const intakeKcal = dayMeals.reduce((total, meal) => total + (meal.finalKcal || 0), 0);
-    const burn = burns.find((item) => item.dateKey === key) || null;
-    const weight = weights.find((item) => item.dateKey === key) || null;
-    const previousWeight = weights.find((item) => item.dateKey === addDays(key, -1)) || null;
+    const burn = burnsByDate.get(key) || null;
+    const weight = weightsByDate.get(key) || null;
+    const previousWeight = weightsByDate.get(addDays(key, -1)) || null;
     const totalBurnKcal = burn?.ouraTotalKcal ?? null;
     const deficitKcal = totalBurnKcal == null || dayMeals.length === 0 ? null : totalBurnKcal - intakeKcal;
     return {
@@ -40,18 +45,19 @@ export async function getDashboard(dateKey: string) {
       totalBurnKcal,
       deficitKcal,
       meals: dayMeals,
-      activities: activities.filter((activity) => activity.dateKey === key),
+      activities: activitiesByDate.get(key) || [],
       sourceStatus: burn?.sourceStatus ?? "not_synced",
       syncedAt: burn?.syncedAt ?? null
     };
   };
 
-  const allDays = allDates.map(buildDay);
-  const days = dates.map((key) => allDays.find((day) => day.dateKey === key) || buildDay(key));
-  const target = allDays.find((day) => day.dateKey === dateKey) || days[days.length - 1];
+  const allDays = new Map(allDates.map((key) => [key, buildDay(key)]));
+  const dayFor = (key: string) => allDays.get(key) || buildDay(key);
+  const days = dates.map(dayFor);
+  const target = dayFor(dateKey) || days[days.length - 1];
   const weekDeficitKcal = days.reduce((total, day) => total + (day.deficitKcal || 0), 0);
   const weeks = weekBuckets.map((week) => {
-    const weekDays = week.dates.map((key) => allDays.find((day) => day.dateKey === key) || buildDay(key));
+    const weekDays = week.dates.map(dayFor);
     const weekWeights = weekDays.map((day) => day.weightKg).filter((weight): weight is number => weight != null);
     return {
       startDateKey: week.startDateKey,
@@ -68,7 +74,7 @@ export async function getDashboard(dateKey: string) {
     dateKey,
     today: target,
     days,
-    analysisDays: analysisDates.map((key) => allDays.find((day) => day.dateKey === key) || buildDay(key)),
+    analysisDays: analysisDates.map(dayFor),
     weeks,
     weekDeficitKcal,
     sevenDayDeficitKcal: weekDeficitKcal,
@@ -77,4 +83,14 @@ export async function getDashboard(dateKey: string) {
     predictedFourWeekWeightLossJin: Math.max(0, fourWeekDeficitKcal / JIN_KCAL),
     dailyDeficitTargetKcal: DAILY_DEFICIT_TARGET_KCAL
   };
+}
+
+function groupByDate<T extends { dateKey: string }>(items: T[]) {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const group = groups.get(item.dateKey);
+    if (group) group.push(item);
+    else groups.set(item.dateKey, [item]);
+  }
+  return groups;
 }

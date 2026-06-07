@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { prepareMealImage, toDataUrl } from "@/lib/image";
 import { uploadImage } from "@/lib/blob";
 import { analyzeMealImage, analyzeMealText, normalizeMealText } from "@/lib/openai";
@@ -8,6 +8,17 @@ import { isDateKey, todayKey } from "@/lib/date";
 
 export const runtime = "nodejs";
 const MEAL_SLOTS = new Set(["breakfast", "lunch", "dinner", "snack"]);
+const NUTRITION_SOURCE_LIMIT = 80;
+const NUTRITION_SOURCE_CACHE_MS = 30_000;
+
+type AnalysisNutritionSource = {
+  id: string;
+  name: string;
+  kcalPer100g: number;
+  confidence: number | null;
+};
+
+let nutritionSourcesCache: { expiresAt: number; sources: AnalysisNutritionSource[] } | null = null;
 
 export async function POST(request: NextRequest) {
   const requestStartedAt = Date.now();
@@ -38,25 +49,23 @@ export async function POST(request: NextRequest) {
     }
 
     const imageFile = file instanceof File ? file : null;
+    const nutritionSourcesPromise = getAnalysisNutritionSources();
     const serverCompressionStartedAt = Date.now();
     const prepared = imageFile ? await prepareMealImage(imageFile) : null;
     const serverCompressionMs = Date.now() - serverCompressionStartedAt;
     const stamp = `${date}/${Date.now()}`;
     let blobUploadMs = 0;
-    const uploadedImagesPromise = prepared
+    const compressedImageUrlPromise = prepared
       ? (async () => {
           const blobUploadStartedAt = Date.now();
           try {
-            return await Promise.all([
-              uploadImage(`meals/original/${stamp}.jpg`, prepared.original, imageFile?.type || "image/jpeg"),
-              uploadImage(`meals/model/${stamp}.jpg`, prepared.compressed, prepared.contentType)
-            ]);
+            return await uploadImage(`meals/model/${stamp}.jpg`, prepared.compressed, prepared.contentType);
           } finally {
             blobUploadMs = Date.now() - blobUploadStartedAt;
           }
         })()
-      : Promise.resolve<[null, null]>([null, null]);
-    const nutritionSources = await prisma.nutritionSource.findMany({ orderBy: { updatedAt: "desc" } });
+      : Promise.resolve<string | null>(null);
+    const nutritionSources = await nutritionSourcesPromise;
     const nutritionHints = nutritionSources.map(({ name, kcalPer100g }) => ({ name, kcalPer100g }));
 
     let analysis;
@@ -70,10 +79,10 @@ export async function POST(request: NextRequest) {
       openAiMs = Date.now() - openAiStartedAt;
     } catch (error) {
       openAiMs ||= Date.now() - openAiStartedAt;
-      const [imageUrl, compressedImageUrl] = await uploadedImagesPromise;
       const storedOriginalBytes = clientOriginalBytes || prepared?.originalBytes;
       const message = error instanceof Error ? error.message : "餐食分析失败";
       if (existingDraft) {
+        compressedImageUrlPromise.catch(() => undefined);
         const entry = await prisma.mealEntry.findUnique({
           where: { id: existingDraft.id },
           include: { items: { include: { nutritionSource: true } } }
@@ -94,13 +103,14 @@ export async function POST(request: NextRequest) {
           { status: 202 }
         );
       }
+      const compressedImageUrl = await compressedImageUrlPromise;
       const databaseStartedAt = Date.now();
       const entry = await prisma.mealEntry.create({
         data: {
           dateKey: date,
           mealSlot,
           status: "draft",
-          imageUrl,
+          imageUrl: null,
           compressedImageUrl,
           userDescription: userDescription || null,
           originalBytes: storedOriginalBytes,
@@ -110,6 +120,7 @@ export async function POST(request: NextRequest) {
         },
         include: { items: true }
       });
+      scheduleOriginalImageUpload(entry.id, prepared, imageFile, stamp);
       const databaseMs = Date.now() - databaseStartedAt;
       return NextResponse.json(
         {
@@ -127,7 +138,7 @@ export async function POST(request: NextRequest) {
         { status: 202 }
       );
     }
-    const [imageUrl, compressedImageUrl] = await uploadedImagesPromise;
+    const compressedImageUrl = await compressedImageUrlPromise;
     const storedOriginalBytes = clientOriginalBytes || prepared?.originalBytes;
 
     const analyzedItems = analysis.items.map((item) => {
@@ -152,7 +163,7 @@ export async function POST(request: NextRequest) {
       dateKey: date,
       mealSlot,
       status: "draft",
-      imageUrl,
+      imageUrl: null,
       compressedImageUrl,
       userDescription: userDescription || null,
       originalBytes: storedOriginalBytes,
@@ -180,6 +191,7 @@ export async function POST(request: NextRequest) {
           include: { items: { include: { nutritionSource: true } } }
         });
     const databaseMs = Date.now() - databaseStartedAt;
+    scheduleOriginalImageUpload(entry.id, prepared, imageFile, stamp);
     const timings = createTimings({
       clientCompressionMs,
       serverCompressionMs,
@@ -205,6 +217,38 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "上传失败";
     return NextResponse.json({ error: message }, { status: 400 });
   }
+}
+
+async function getAnalysisNutritionSources() {
+  const now = Date.now();
+  if (nutritionSourcesCache && nutritionSourcesCache.expiresAt > now) {
+    return nutritionSourcesCache.sources;
+  }
+
+  const sources = await prisma.nutritionSource.findMany({
+    select: {
+      id: true,
+      name: true,
+      kcalPer100g: true,
+      confidence: true
+    },
+    orderBy: { updatedAt: "desc" },
+    take: NUTRITION_SOURCE_LIMIT
+  });
+  nutritionSourcesCache = { expiresAt: now + NUTRITION_SOURCE_CACHE_MS, sources };
+  return sources;
+}
+
+function scheduleOriginalImageUpload(entryId: string, prepared: Awaited<ReturnType<typeof prepareMealImage>> | null, imageFile: File | null, stamp: string) {
+  if (!prepared) return;
+  after(async () => {
+    try {
+      const imageUrl = await uploadImage(`meals/original/${stamp}.jpg`, prepared.original, imageFile?.type || "image/jpeg");
+      await prisma.mealEntry.update({ where: { id: entryId }, data: { imageUrl } });
+    } catch (error) {
+      console.warn("[meal-original-upload-failed]", error);
+    }
+  });
 }
 
 function numberFromForm(value: FormDataEntryValue | null, max: number) {

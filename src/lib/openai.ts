@@ -7,6 +7,7 @@ import { z } from "zod";
 import { env, optionalEnv } from "@/lib/config";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const DEFAULT_OPENAI_TIMEOUT_MS = 60_000;
 
 const mealAnalysisSchema = z.object({
   items: z.array(
@@ -253,6 +254,8 @@ export async function analyzeDashboardInsight(input: DashboardInsightInput): Pro
 
 async function postOpenAi(payload: unknown) {
   const body = JSON.stringify(payload);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), openAiTimeoutMs());
   try {
     const response = await fetch(OPENAI_RESPONSES_URL, {
       method: "POST",
@@ -260,7 +263,8 @@ async function postOpenAi(payload: unknown) {
         Authorization: `Bearer ${env("OPENAI_API_KEY")}`,
         "Content-Type": "application/json"
       },
-      body
+      body,
+      signal: controller.signal
     });
 
     if (!response.ok) {
@@ -269,11 +273,23 @@ async function postOpenAi(payload: unknown) {
     }
     return response.json();
   } catch (error) {
+    if (isAbortError(error)) throw betterNetworkError(error);
     if (process.platform !== "win32" || optionalEnv("OPENAI_DISABLE_POWERSHELL_FALLBACK") === "1") {
       throw betterNetworkError(error);
     }
     return postOpenAiWithPowerShell(body);
+  } finally {
+    clearTimeout(timeout);
   }
+}
+
+function openAiTimeoutMs() {
+  const value = Number(optionalEnv("OPENAI_TIMEOUT_MS"));
+  return Number.isFinite(value) && value >= 5_000 && value <= 120_000 ? value : DEFAULT_OPENAI_TIMEOUT_MS;
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
 }
 
 async function postOpenAiWithPowerShell(body: string) {
@@ -341,7 +357,7 @@ export function normalizeMealText(value: string | null | undefined) {
 function betterNetworkError(error: unknown) {
   const message = error instanceof Error ? error.message : "OpenAI 请求失败";
   const cause = error instanceof Error && "cause" in error ? String(error.cause) : "";
-  if (/fetch failed|ConnectTimeout|timeout|socket/i.test(`${message} ${cause}`)) {
+  if (/AbortError|aborted|fetch failed|ConnectTimeout|timeout|socket/i.test(`${message} ${cause}`)) {
     return new Error("OpenAI 连接超时。请确认本机代理/VPN 可让 Node 或 PowerShell 访问 api.openai.com。");
   }
   return error instanceof Error ? error : new Error(message);

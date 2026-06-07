@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import {
   BookmarkPlus,
@@ -15,18 +16,19 @@ import {
   CloudCog,
   Database,
   FileText,
-  Flame,
   Home,
+  Image as ImageIcon,
   Leaf,
-  Lightbulb,
   Menu,
   Pencil,
   Plus,
   RefreshCw,
   Save,
   Send,
+  ChefHat,
+  ShoppingBag,
+  SlidersHorizontal,
   Sparkles,
-  Target,
   Trash2,
   Upload,
   Utensils,
@@ -36,7 +38,7 @@ import {
 } from "lucide-react";
 
 type MealSlot = "breakfast" | "lunch" | "dinner" | "snack";
-type MealPreference = "homemade" | "takeout" | "light" | "sauce";
+type MealPreference = "light" | "takeout" | "homemade" | "photo";
 type NutritionSource = {
   id: string;
   name: string;
@@ -139,12 +141,19 @@ type Dashboard = {
   predictedFourWeekWeightLossJin: number;
   dailyDeficitTargetKcal: number;
 };
+export type DashboardPayload = Dashboard;
+export type MealPresetPayload = MealPreset;
 
 type AppTab = "home" | "quick" | "capture" | "trends" | "more";
 type TabTransitionDirection = "forward" | "back" | "none";
-type AnalysisView = "calories" | "weight" | "meals" | "correlation";
+type TabTransitionVariant = "lateral" | "capture" | "panel";
 type AnalysisPhase = "idle" | "compressing" | "recognizing";
 type QuickStudioView = "presets" | "library" | "ai";
+type ManualPresetItem = {
+  id: string;
+  nutritionSourceId: string;
+  grams: string;
+};
 type MealAnalysisTimings = {
   clientCompressionMs: number;
   serverCompressionMs: number;
@@ -153,53 +162,60 @@ type MealAnalysisTimings = {
   databaseMs: number;
   totalServerMs: number;
 };
-type AiInsight = {
-  summaryTitle: string;
-  insights: string[];
-  suggestions: string[];
-  cautions: string[];
-};
 type ConnectionStatus = {
   oura: { connected: boolean; scope: string | null; expiresAt: number | null };
   intervals: { connected: boolean; athleteId: string };
 };
 
+const loadAnalysisPage = () => import("./dashboard-analysis-page");
+
+const AnalysisPage = dynamic(loadAnalysisPage, {
+  ssr: false,
+  loading: () => (
+    <section className="analysis-page">
+      <div className="analysis-empty-card">
+        <strong>正在准备分析</strong>
+        <p>图表和洞察会在进入分析页时加载。</p>
+      </div>
+    </section>
+  )
+});
+
 const TAB_ORDER: AppTab[] = ["home", "quick", "capture", "trends", "more"];
 const APP_TABS = new Set<AppTab>(TAB_ORDER);
+const TAB_TRANSITION_MS = 280;
 const MEAL_SLOTS: Array<{ key: MealSlot; label: string; time: string; image: string }> = [
-  { key: "breakfast", label: "早餐", time: "08:00", image: "/illustrations/meal-breakfast.png" },
-  { key: "lunch", label: "午餐", time: "12:30", image: "/illustrations/meal-lunch.png" },
-  { key: "dinner", label: "晚餐", time: "18:30", image: "/illustrations/meal-dinner.png" },
-  { key: "snack", label: "加餐", time: "15:30", image: "/illustrations/meal-snack.png" }
+  { key: "breakfast", label: "早餐", time: "08:00", image: "/illustrations/meal-breakfast.webp" },
+  { key: "lunch", label: "午餐", time: "12:30", image: "/illustrations/meal-lunch.webp" },
+  { key: "dinner", label: "晚餐", time: "18:30", image: "/illustrations/meal-dinner.webp" },
+  { key: "snack", label: "加餐", time: "15:30", image: "/illustrations/meal-snack.webp" }
 ];
 const MEAL_PREFERENCES: Array<{ key: MealPreference; label: string; hint: string }> = [
-  { key: "homemade", label: "自制", hint: "家常做法" },
+  { key: "light", label: "清淡", hint: "少油少盐" },
   { key: "takeout", label: "外卖", hint: "门店估算" },
-  { key: "light", label: "清淡", hint: "少油少糖" },
-  { key: "sauce", label: "酱料多", hint: "额外油盐" }
-];
-const ANALYSIS_TABS: Array<{ key: AnalysisView; label: string }> = [
-  { key: "calories", label: "热量" },
-  { key: "weight", label: "体重" },
-  { key: "meals", label: "餐别" },
-  { key: "correlation", label: "相关性" }
+  { key: "homemade", label: "自制", hint: "家常做法" },
+  { key: "photo", label: "拍照", hint: "照片优先" }
 ];
 const QUICK_STUDIO_TABS: Array<{ key: QuickStudioView; label: string; hint: string }> = [
   { key: "presets", label: "常用模板", hint: "快速计入" },
   { key: "library", label: "营养库", hint: "成分表" },
   { key: "ai", label: "AI 新建", hint: "自动拆解" }
 ];
-const CORRELATION_WINDOW_DAYS = 14;
-const DEFAULT_SLOT_TARGET_KCAL = 450;
 
-export default function DashboardTailAdminClient({ initialDate }: { initialDate: string }) {
+type DashboardTailAdminClientProps = {
+  initialDate: string;
+  initialDashboard: Dashboard | null;
+  initialPresets: MealPreset[];
+};
+
+export default function DashboardTailAdminClient({ initialDate, initialDashboard, initialPresets }: DashboardTailAdminClientProps) {
   const [dateKey, setDateKey] = useState(initialDate);
-  const [dashboard, setDashboard] = useState<Dashboard | null>(null);
-  const [presets, setPresets] = useState<MealPreset[]>([]);
+  const [dashboard, setDashboard] = useState<Dashboard | null>(initialDashboard);
+  const [presets, setPresets] = useState<MealPreset[]>(initialPresets);
   const [draft, setDraft] = useState<MealEntry | null>(null);
   const [kcal, setKcal] = useState("");
   const [mealContext, setMealContext] = useState("");
-  const [weightInput, setWeightInput] = useState("");
+  const [weightInput, setWeightInput] = useState(() => (initialDashboard?.today.weightKg == null ? "" : String(initialDashboard.today.weightKg)));
   const [weightSaving, setWeightSaving] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -214,12 +230,19 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   const [activeTab, setActiveTab] = useState<AppTab>("home");
   const [leavingTab, setLeavingTab] = useState<AppTab | null>(null);
   const [tabDirection, setTabDirection] = useState<TabTransitionDirection>("none");
+  const [tabTransitionVariant, setTabTransitionVariant] = useState<TabTransitionVariant>("lateral");
+  const [tabStageMinHeight, setTabStageMinHeight] = useState<number | null>(null);
   const [mealSlot, setMealSlot] = useState<MealSlot>(() => defaultMealSlot());
   const [mealPreferences, setMealPreferences] = useState<MealPreference[]>([]);
   const [pendingPresetUse, setPendingPresetUse] = useState<{ preset: MealPreset; items: Array<{ id: string; grams: number | null }> } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const tabStageRef = useRef<HTMLDivElement>(null);
+  const activePanelRef = useRef<HTMLDivElement>(null);
+  const leavingPanelRef = useRef<HTMLDivElement>(null);
   const activeTabRef = useRef<AppTab>("home");
   const tabInitializedRef = useRef(false);
+  const initialDashboardDateRef = useRef(initialDashboard?.dateKey || null);
+  const initialPresetsLoadedRef = useRef(true);
   const tabTransitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
@@ -238,6 +261,10 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   }, []);
 
   useEffect(() => {
+    if (initialDashboardDateRef.current === dateKey) {
+      initialDashboardDateRef.current = null;
+      return;
+    }
     let cancelled = false;
     fetch(`/api/dashboard?date=${dateKey}`)
       .then((response) => (response.ok ? response.json() : null))
@@ -255,6 +282,10 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   }, [dateKey]);
 
   useEffect(() => {
+    if (initialPresetsLoadedRef.current) {
+      initialPresetsLoadedRef.current = false;
+      return;
+    }
     let cancelled = false;
     fetch("/api/meal-presets")
       .then((response) => (response.ok ? response.json() : null))
@@ -276,6 +307,7 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
 
   const applyTab = useCallback((nextTab: AppTab) => {
     const currentTab = activeTabRef.current;
+    if (nextTab === "trends") void loadAnalysisPage();
     if (tabTransitionTimerRef.current) {
       clearTimeout(tabTransitionTimerRef.current);
       tabTransitionTimerRef.current = null;
@@ -287,7 +319,9 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
       setActiveTab(nextTab);
       setLeavingTab(null);
       setTabDirection("none");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      setTabTransitionVariant("lateral");
+      setTabStageMinHeight(null);
+      window.scrollTo({ top: 0, behavior: "auto" });
       return;
     }
 
@@ -295,21 +329,38 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
       setActiveTab(nextTab);
       setLeavingTab(null);
       setTabDirection("none");
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      setTabTransitionVariant("lateral");
+      setTabStageMinHeight(null);
+      window.scrollTo({ top: 0, behavior: "auto" });
       return;
     }
 
     const direction = tabTransitionDirection(currentTab, nextTab);
+    const currentHeight = activePanelRef.current?.getBoundingClientRect().height || tabStageRef.current?.getBoundingClientRect().height || 0;
     activeTabRef.current = nextTab;
     setTabDirection(direction);
+    setTabTransitionVariant(tabTransitionVariantFor(currentTab, nextTab));
+    setTabStageMinHeight(currentHeight > 0 ? Math.ceil(currentHeight) : null);
     setLeavingTab(currentTab);
     setActiveTab(nextTab);
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    window.scrollTo({ top: 0, behavior: "auto" });
     tabTransitionTimerRef.current = setTimeout(() => {
       setLeavingTab(null);
+      setTabStageMinHeight(null);
       tabTransitionTimerRef.current = null;
-    }, 180);
+    }, TAB_TRANSITION_MS);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!leavingTab) return;
+    const frame = window.requestAnimationFrame(() => {
+      const activeHeight = activePanelRef.current?.getBoundingClientRect().height || 0;
+      const leavingHeight = leavingPanelRef.current?.getBoundingClientRect().height || 0;
+      const nextHeight = Math.max(activeHeight, leavingHeight);
+      if (nextHeight > 0) setTabStageMinHeight(Math.ceil(nextHeight));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTab, leavingTab]);
 
   useEffect(() => {
     function updateTabFromHash() {
@@ -329,12 +380,17 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
   }, []);
 
   const navigateTo = useCallback((tab: AppTab) => {
+    if (tab === "trends") void loadAnalysisPage();
     if (window.location.hash === `#${tab}`) {
       applyTab(tab);
       return;
     }
     window.location.hash = tab;
   }, [applyTab]);
+
+  const prepareTab = useCallback((tab: AppTab) => {
+    if (tab === "trends") void loadAnalysisPage();
+  }, []);
 
   function chooseFile(file: File) {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -615,27 +671,38 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
           <AnalysisPage dashboard={dashboard} />
         ) : null}
         {tab === "more" ? (
-          <AppTabSection eyebrow="Profile" title="我的" description="管理数据源、同步状态和连接设置。">
-            <MorePage dashboard={dashboard} syncing={syncing} onSync={syncNow} />
-          </AppTabSection>
+          <MorePage dashboard={dashboard} syncing={syncing} onSync={syncNow} />
         ) : null}
         {tab !== "capture" && error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
       </>
     );
   }
 
+  const tabStageClassName = leavingTab
+    ? `app-tab-stage app-tab-stage-transitioning app-tab-transition-${tabTransitionVariant}`
+    : "app-tab-stage";
+  const tabStageStyle = tabStageMinHeight == null ? undefined : { minHeight: `${tabStageMinHeight}px` };
+
   return (
     <main className="wellness-shell text-slate-900">
       <div className="wellness-app">
         <AppHeader dashboard={dashboard} onNavigate={navigateTo} />
         <section className="px-4 pb-4">
-          <div className={leavingTab ? "app-tab-stage app-tab-stage-transitioning" : "app-tab-stage"}>
+          <div ref={tabStageRef} className={tabStageClassName} style={tabStageStyle}>
             {leavingTab ? (
-              <div key={`leaving-${leavingTab}`} className={`app-tab-panel app-tab-exit app-tab-exit-${tabDirection} space-y-4`}>
+              <div
+                ref={leavingPanelRef}
+                key={`leaving-${leavingTab}`}
+                className={`app-tab-panel app-tab-exit app-tab-exit-${tabDirection} app-tab-exit-${tabTransitionVariant} space-y-4`}
+              >
                 {renderTab(leavingTab)}
               </div>
             ) : null}
-            <div key={`active-${activeTab}`} className={`app-tab-panel app-tab-enter app-tab-enter-${tabDirection} space-y-4`}>
+            <div
+              ref={activePanelRef}
+              key={`active-${activeTab}`}
+              className={`app-tab-panel app-tab-enter app-tab-enter-${tabDirection} app-tab-enter-${tabTransitionVariant} space-y-4`}
+            >
               {renderTab(activeTab)}
             </div>
           </div>
@@ -649,13 +716,13 @@ export default function DashboardTailAdminClient({ initialDate }: { initialDate:
                 void addPresetMeal(pendingPresetUse.preset, pendingPresetUse.items, mealSlot);
                 setPendingPresetUse(null);
               }}
-              className="mt-4 flex min-h-12 w-full items-center justify-center rounded-full bg-fuchsia-600 px-4 font-semibold text-white"
+              className="plan-primary-action bottom-sheet-full-action bottom-sheet-spaced-action"
             >
               计入{mealSlotLabel(mealSlot)}
             </button>
           </BottomSheet>
         ) : null}
-        <BottomNavigation activeTab={activeTab} onNavigate={navigateTo} />
+        <BottomNavigation activeTab={activeTab} onNavigate={navigateTo} onPrepare={prepareTab} />
       </div>
     </main>
   );
@@ -685,23 +752,47 @@ function AppHeader({
   );
 }
 
-function BottomNavigation({ activeTab, onNavigate }: { activeTab: AppTab; onNavigate: (tab: AppTab) => void }) {
+function BottomNavigation({
+  activeTab,
+  onNavigate,
+  onPrepare
+}: {
+  activeTab: AppTab;
+  onNavigate: (tab: AppTab) => void;
+  onPrepare: (tab: AppTab) => void;
+}) {
+  const activeIndex = Math.max(0, TAB_ORDER.indexOf(activeTab));
+  const navStyle = { "--active-index": activeIndex } as React.CSSProperties & { "--active-index": number };
   return (
-    <nav className="wellness-bottom-nav" aria-label="应用导航">
-      <BottomNavItem icon={<Home size={21} strokeWidth={1.8} />} label="首页" active={activeTab === "home"} onClick={() => onNavigate("home")} />
-      <BottomNavItem icon={<ClipboardList size={21} strokeWidth={1.8} />} label="计划" active={activeTab === "quick"} onClick={() => onNavigate("quick")} />
-      <BottomNavItem icon={<Plus size={29} strokeWidth={1.8} />} label="记一餐" active={activeTab === "capture"} primary onClick={() => onNavigate("capture")} />
-      <BottomNavItem icon={<ChartPie size={21} strokeWidth={1.8} />} label="分析" active={activeTab === "trends"} onClick={() => onNavigate("trends")} />
-      <BottomNavItem icon={<UserRound size={22} strokeWidth={1.8} />} label="我的" active={activeTab === "more"} onClick={() => onNavigate("more")} />
+    <nav className="wellness-bottom-nav" aria-label="应用导航" style={navStyle}>
+      <BottomNavItem icon={<Home size={21} strokeWidth={1.8} />} label="首页" active={activeTab === "home"} onClick={() => onNavigate("home")} onPrepare={() => onPrepare("home")} />
+      <BottomNavItem icon={<ClipboardList size={21} strokeWidth={1.8} />} label="计划" active={activeTab === "quick"} onClick={() => onNavigate("quick")} onPrepare={() => onPrepare("quick")} />
+      <BottomNavItem icon={<Plus size={29} strokeWidth={1.8} />} label="记一餐" active={activeTab === "capture"} primary onClick={() => onNavigate("capture")} onPrepare={() => onPrepare("capture")} />
+      <BottomNavItem icon={<ChartPie size={21} strokeWidth={1.8} />} label="分析" active={activeTab === "trends"} onClick={() => onNavigate("trends")} onPrepare={() => onPrepare("trends")} />
+      <BottomNavItem icon={<UserRound size={22} strokeWidth={1.8} />} label="我的" active={activeTab === "more"} onClick={() => onNavigate("more")} onPrepare={() => onPrepare("more")} />
     </nav>
   );
 }
 
-function BottomNavItem({ icon, label, active, primary, onClick }: { icon: React.ReactNode; label: string; active?: boolean; primary?: boolean; onClick: () => void }) {
+function BottomNavItem({
+  icon,
+  label,
+  active,
+  primary,
+  onClick,
+  onPrepare
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active?: boolean;
+  primary?: boolean;
+  onClick: () => void;
+  onPrepare: () => void;
+}) {
   if (primary) {
     return (
-      <button type="button" onClick={onClick} className="group relative flex min-h-14 min-w-0 items-center justify-center outline-none" aria-label={label}>
-        <span className={`journal-primary-nav absolute -top-5 flex h-14 w-14 items-center justify-center rounded-full text-white transition duration-200 group-active:scale-95 ${active ? "scale-[1.04]" : ""}`}>
+      <button type="button" onClick={onClick} onPointerEnter={onPrepare} onFocus={onPrepare} className="group relative flex min-h-14 min-w-0 items-center justify-center outline-none" aria-label={label}>
+        <span className={`journal-primary-nav absolute -top-5 flex h-14 w-14 items-center justify-center rounded-full text-white transition duration-200 group-active:translate-y-0.5 group-active:scale-[0.98] ${active ? "journal-primary-nav-active scale-[1.04]" : ""}`}>
           {icon}
         </span>
         <span className="sr-only">{label}</span>
@@ -710,23 +801,10 @@ function BottomNavItem({ icon, label, active, primary, onClick }: { icon: React.
   }
 
   return (
-    <button type="button" onClick={onClick} className={`journal-nav-item group flex min-h-14 min-w-0 flex-col items-center justify-center px-1 outline-none transition duration-200 ${active ? "journal-nav-item-active" : ""}`}>
-      <span className={`journal-nav-icon transition-transform duration-200 group-active:scale-90 ${active ? "scale-105" : "scale-100"}`}>{icon}</span>
+    <button type="button" onClick={onClick} onPointerEnter={onPrepare} onFocus={onPrepare} className={`journal-nav-item group flex min-h-14 min-w-0 flex-col items-center justify-center px-1 outline-none transition duration-200 ${active ? "journal-nav-item-active" : ""}`}>
+      <span className={`journal-nav-icon transition-transform duration-200 group-active:translate-y-0.5 group-active:scale-95 ${active ? "scale-105" : "scale-100"}`}>{icon}</span>
       <span className="journal-nav-label">{label}</span>
     </button>
-  );
-}
-
-function AppTabSection({ eyebrow, title, description, children }: { eyebrow: string; title: string; description: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-4">
-      <div className="px-1">
-        <p className="text-xs font-semibold text-fuchsia-600">{eyebrow}</p>
-        <h1 className="mt-1 text-2xl font-bold text-slate-950">{title}</h1>
-        <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
-      </div>
-      {children}
-    </div>
   );
 }
 
@@ -859,10 +937,10 @@ function StatusStrip({
 
 function HomeShortcuts({ onNavigate, onWeight }: { onNavigate: (tab: AppTab) => void; onWeight: () => void }) {
   const shortcuts = [
-    { label: "记一餐", hint: "记录饮食", image: "/illustrations/shortcut-meal.png", onClick: () => onNavigate("capture") },
-    { label: "记运动", hint: "即将开放", image: "/illustrations/shortcut-exercise.png", disabled: true },
-    { label: "记体重", hint: "每天记录", image: "/illustrations/shortcut-weight.png", onClick: onWeight },
-    { label: "查看趋势", hint: "数据洞察", image: "/illustrations/shortcut-trend.png", onClick: () => onNavigate("trends") }
+    { label: "记一餐", hint: "记录饮食", image: "/illustrations/shortcut-meal.webp", onClick: () => onNavigate("capture") },
+    { label: "记运动", hint: "即将开放", image: "/illustrations/shortcut-exercise.webp", disabled: true },
+    { label: "记体重", hint: "每天记录", image: "/illustrations/shortcut-weight.webp", onClick: onWeight },
+    { label: "查看趋势", hint: "数据洞察", image: "/illustrations/shortcut-trend.webp", onClick: () => onNavigate("trends") }
   ];
   return (
     <section className="journal-section">
@@ -878,7 +956,7 @@ function HomeShortcuts({ onNavigate, onWeight }: { onNavigate: (tab: AppTab) => 
             aria-label={item.disabled ? `${item.label}，即将开放` : item.label}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={item.image} alt="" />
+            <img src={item.image} alt="" loading="lazy" decoding="async" />
             <span><strong>{item.label}</strong><small>{item.hint}</small></span>
           </button>
         ))}
@@ -942,7 +1020,7 @@ function HomeQuickMeals({
           <p className="wellness-eyebrow">Quick Meals</p>
           <h2 className="wellness-section-title">常用餐食</h2>
         </div>
-        <button type="button" onClick={onViewAll} className="flex min-h-11 items-center gap-1 text-sm font-semibold text-fuchsia-600">
+        <button type="button" onClick={onViewAll} className="wellness-text-link">
           管理
           <ChevronRight size={16} />
         </button>
@@ -953,10 +1031,10 @@ function HomeQuickMeals({
             <div key={preset.id} className="wellness-quick-meal w-40 shrink-0 p-2">
               <button type="button" onClick={() => openAdjustments(preset)} className="w-full text-left">
                 <MealThumbnail url={preset.imageUrl} label={preset.name} compact />
-                <p className="mt-2 truncate text-sm font-bold text-slate-950">{preset.name}</p>
-                <p className="mt-1 text-xs text-slate-400">{preset.baseKcal} kcal</p>
+                 <p className="meal-preset-title">{preset.name}</p>
+                 <p className="meal-preset-meta">{preset.baseKcal} kcal</p>
               </button>
-              <button type="button" onClick={() => onUse(preset, presetItems(preset))} disabled={addingId === preset.id} className="mt-2 flex min-h-11 w-full items-center justify-center gap-1 rounded-lg bg-fuchsia-600 px-2 text-xs font-bold text-white disabled:opacity-60">
+              <button type="button" onClick={() => onUse(preset, presetItems(preset))} disabled={addingId === preset.id} className="meal-preset-primary">
                 <Plus size={15} />
                 {addingId === preset.id ? "计入中" : "直接计入"}
               </button>
@@ -964,21 +1042,21 @@ function HomeQuickMeals({
           ))}
         </div>
       ) : (
-        <button type="button" onClick={onViewAll} className="flex min-h-20 w-full items-center justify-center rounded-lg border border-dashed border-fuchsia-200 bg-fuchsia-50/50 px-4 text-sm font-semibold text-fuchsia-700">
+        <button type="button" onClick={onViewAll} className="wellness-empty-action">
           添加第一个常用餐食
         </button>
       )}
       {adjusting ? (
         <BottomSheet title="调整本次克数" onClose={() => setAdjusting(null)}>
-          <div className="space-y-3">
-            <p className="text-sm text-slate-500">{adjusting.name} · 仅影响本次计入</p>
+          <div className="bottom-sheet-stack">
+            <p className="bottom-sheet-note">{adjusting.name} · 仅影响本次计入</p>
             {adjusting.items.map((item) => (
-              <label key={item.id} className="block rounded-lg border border-slate-100 bg-slate-50 p-3">
-                <span className="mb-2 block text-sm font-semibold text-slate-800">{item.name}</span>
+              <label key={item.id} className="bottom-sheet-edit-card">
+                <span className="bottom-sheet-edit-title">{item.name}</span>
                 <GramsSelect value={grams[item.id] || ""} onChange={(value) => setGrams((current) => ({ ...current, [item.id]: value }))} label={`${item.name} 本次克数`} />
               </label>
             ))}
-            <button type="button" onClick={() => { onUse(adjusting, adjustedItems(adjusting)); setAdjusting(null); }} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-600 px-4 font-bold text-white">
+            <button type="button" onClick={() => { onUse(adjusting, adjustedItems(adjusting)); setAdjusting(null); }} className="plan-primary-action bottom-sheet-full-action">
               <Plus size={18} />
               确认计入
             </button>
@@ -1002,11 +1080,11 @@ function BottomSheet({ title, onClose, children }: { title: string; onClose: () 
 
   return createPortal(
     <>
-      <button type="button" onClick={onClose} className="fixed inset-0 z-50 bg-slate-950/30" aria-label="关闭弹层" />
-      <section className="fixed inset-x-0 bottom-0 z-[60] mx-auto max-h-[82vh] w-full max-w-[480px] overscroll-contain overflow-y-auto rounded-t-2xl bg-white px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 shadow-2xl">
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-200" />
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h3 className="text-lg font-bold">{title}</h3>
+      <button type="button" onClick={onClose} className="bottom-sheet-backdrop" aria-label="关闭弹层" />
+      <section className="bottom-sheet-panel">
+        <div className="bottom-sheet-handle" />
+        <div className="bottom-sheet-header">
+          <h3 className="bottom-sheet-title">{title}</h3>
           <button type="button" onClick={onClose} className="app-icon-button" aria-label="关闭">
             <X size={18} />
           </button>
@@ -1068,61 +1146,88 @@ function WeeklyLinePreview({ days }: { days: DashboardDay[] }) {
 
 function MorePage({ dashboard, syncing, onSync }: { dashboard: Dashboard | null; syncing: boolean; onSync: () => void }) {
   const [status, setStatus] = useState<ConnectionStatus | null>(null);
+  const [connectionFailed, setConnectionFailed] = useState(false);
+  const synced = Boolean(dashboard?.today.syncedAt);
+  const syncedText = formatSyncDate(dashboard?.today.syncedAt);
 
   useEffect(() => {
     let cancelled = false;
     fetch("/api/connections/status")
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data: ConnectionStatus | null) => {
-        if (!cancelled && data) setStatus(data);
+      .then((response) => {
+        if (!response.ok) throw new Error("connection status unavailable");
+        return response.json() as Promise<ConnectionStatus>;
       })
-      .catch(() => undefined);
+      .then((data) => {
+        if (!cancelled) {
+          setStatus(data);
+          setConnectionFailed(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setConnectionFailed(true);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
   return (
-    <div className="space-y-4">
-      <section className="app-card p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-fuchsia-50 text-fuchsia-600"><RefreshCw size={20} className={syncing ? "animate-spin" : ""} /></div>
-          <div className="min-w-0 flex-1">
-            <p className="font-bold">同步状态</p>
-            <p className="truncate text-xs text-slate-400">{dashboard?.today.syncedAt ? new Date(dashboard.today.syncedAt).toLocaleString() : "尚未同步"}</p>
+    <section className="more-page">
+      <div className="more-hero">
+        <div className="more-hero-copy">
+          <p>我的数据</p>
+          <h1>我的</h1>
+          <span>管理同步、数据源和账户设置。</span>
+        </div>
+        <span className={synced ? "more-status-pill more-status-pill-ready" : "more-status-pill"}>
+          <CircleCheckBig size={15} />
+          {synced ? "已同步" : "待同步"}
+        </span>
+      </div>
+
+      <section className="more-card">
+        <div className="more-card-head">
+          <span className="more-card-icon"><RefreshCw size={20} className={syncing ? "animate-spin" : ""} /></span>
+          <div>
+            <p>同步状态</p>
+            <h2>同步状态</h2>
+            <span>{syncedText}</span>
           </div>
         </div>
-        <button type="button" onClick={onSync} disabled={syncing} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-fuchsia-600 px-4 font-bold text-white disabled:opacity-60">
+        <button type="button" onClick={onSync} disabled={syncing} className="more-primary-action">
           <RefreshCw size={18} className={syncing ? "animate-spin" : ""} />
           {syncing ? "正在同步" : "立即同步"}
         </button>
       </section>
-      <section className="app-card p-4">
-        <div className="mb-3 flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-fuchsia-50 text-fuchsia-600"><Database size={20} /></div>
+
+      <section className="more-card">
+        <div className="more-card-head">
+          <span className="more-card-icon"><Database size={20} /></span>
           <div>
-            <p className="font-bold">数据源</p>
-            <p className="text-xs text-slate-400">消耗与训练参考连接</p>
+            <p>数据源</p>
+            <h2>数据源</h2>
+            <span>消耗与训练参考连接</span>
           </div>
         </div>
-        <div className="space-y-3 text-sm">
-          <ConnectionRow label="Oura 总消耗" connected={status?.oura.connected} />
-          <ConnectionRow label="Intervals.icu 参考" connected={status?.intervals.connected} />
+        <div className="more-connection-list">
+          <ConnectionRow label="Oura 总消耗" connected={status?.oura.connected} failed={connectionFailed} />
+          <ConnectionRow label="Intervals.icu 参考" connected={status?.intervals.connected} failed={connectionFailed} />
         </div>
-        <Link href="/settings" className="mt-4 flex min-h-12 w-full items-center justify-between rounded-lg border border-fuchsia-100 bg-fuchsia-50 px-4 text-sm font-bold text-fuchsia-700">
+        <Link href="/settings" className="more-setting-link">
           数据源详细设置
           <ChevronRight size={17} />
         </Link>
       </section>
-    </div>
+    </section>
   );
 }
 
-function ConnectionRow({ label, connected }: { label: string; connected: boolean | undefined }) {
+function ConnectionRow({ label, connected, failed }: { label: string; connected: boolean | undefined; failed?: boolean }) {
+  const statusText = connected ? "已连接" : connected === false ? "未连接" : failed ? "暂不可用" : "读取中";
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-3">
-      <span className="font-medium text-slate-700">{label}</span>
-      <span className={`text-xs font-bold ${connected ? "text-fuchsia-700" : "text-slate-400"}`}>{connected ? "已连接" : connected === false ? "未连接" : "读取中"}</span>
+    <div className="more-connection-row">
+      <span>{label}</span>
+      <strong className={connected ? "more-connection-ready" : failed ? "more-connection-error" : ""}>{statusText}</strong>
     </div>
   );
 }
@@ -1213,7 +1318,7 @@ function CapturePage({
         <div className="capture-hero-copy">
           <p>Meal Vision</p>
           <h1>记一餐</h1>
-          <span>上传图片或填写描述，AI 先生成草稿，确认热量后再计入今日统计。</span>
+          <span>拍照上传餐食，AI 智能识别营养</span>
         </div>
         <span className="capture-ai-badge"><Sparkles size={14} />AI 识别</span>
       </div>
@@ -1272,17 +1377,21 @@ function UploadPanel({
   hasDraft: boolean;
   draftContent: React.ReactNode;
 }) {
-  const canAnalyze = Boolean(selectedFile || mealContext.trim());
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const contextLimit = 200;
+  const contextCount = mealContext.length;
+  const loadingTitle = analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图";
+  const loadingText = analysisPhase === "compressing" ? "正在减少图片体积，节省上传时间" : "正在识别食物种类并估测热量";
+  const actionTitle = loading ? loadingTitle : hasDraft ? "根据说明重新识别" : "开始 AI 识别";
+  const actionHint = loading ? loadingText : hasDraft ? "更新营养草稿" : "识别营养与热量";
+  const photoStageClassName = [
+    "capture-photo-stage",
+    previewUrl ? "capture-photo-stage-preview" : "",
+    loading ? "capture-photo-stage-processing" : ""
+  ].filter(Boolean).join(" ");
 
   return (
-    <section className="capture-studio-card">
-      <div className="capture-card-head">
-        <div>
-          <p>AI Scanner</p>
-          <h2>上传图片或文字描述</h2>
-        </div>
-        <span><Camera size={17} />智能识别</span>
-      </div>
+    <section className="capture-workflow">
       <input
         ref={inputRef}
         type="file"
@@ -1294,49 +1403,99 @@ function UploadPanel({
           event.currentTarget.value = "";
         }}
       />
-      <button
-        onClick={onPick}
-        disabled={loading}
-        aria-label={previewUrl ? "替换餐食图片" : "上传餐食图片"}
-        className={previewUrl ? "capture-scanner capture-scanner-preview" : "capture-scanner"}
-      >
-        <span className="capture-frame-corner capture-frame-corner-tl" />
-        <span className="capture-frame-corner capture-frame-corner-tr" />
-        <span className="capture-frame-corner capture-frame-corner-bl" />
-        <span className="capture-frame-corner capture-frame-corner-br" />
-        {previewUrl ? (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={previewUrl} alt="待分析餐食" className="capture-preview-image" />
-            <span className="capture-replace-pill">轻触替换图片</span>
-            <span className="capture-file-meta">
-              <small>{selectedFile?.name || "已选择图片"}</small>
-              <small>{selectedFile ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB` : ""}</small>
-            </span>
-            {loading ? (
-              <span className="capture-loading-layer">
-                <CloudCog size={52} className="animate-pulse" />
-                <strong>{analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图"}</strong>
-                <small>{analysisPhase === "compressing" ? "正在减少图片体积，节省上传时间" : "正在识别食物种类并估测重量"}</small>
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) onChoose(file);
+          event.currentTarget.value = "";
+        }}
+      />
+
+      <section className="capture-photo-card" aria-label="上传餐食照片">
+        <button
+          type="button"
+          onClick={onPick}
+          disabled={loading}
+          aria-label={previewUrl ? "更换餐食照片" : "上传餐食照片"}
+          className={photoStageClassName}
+        >
+          <span className="capture-frame-corner capture-frame-corner-tl" />
+          <span className="capture-frame-corner capture-frame-corner-tr" />
+          <span className="capture-frame-corner capture-frame-corner-bl" />
+          <span className="capture-frame-corner capture-frame-corner-br" />
+          {previewUrl ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewUrl} alt="待分析餐食" className="capture-preview-image" />
+              <span className="capture-replace-pill">轻触更换</span>
+              <span className="capture-file-meta">
+                <small>{selectedFile?.name || "已选择图片"}</small>
+                <small>{selectedFile ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB` : ""}</small>
               </span>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <span className="capture-scan-line" />
-            <span className="capture-upload-orb">
-              {loading ? <CloudCog size={44} className="animate-pulse" /> : <Upload size={46} />}
+            </>
+          ) : (
+            <>
+              <span className="capture-scan-line" />
+              <span className="capture-upload-art" aria-hidden="true">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/illustrations/meal-lunch.webp" alt="" loading="lazy" decoding="async" />
+                <span><Plus size={25} /></span>
+              </span>
+              <strong>上传餐食照片</strong>
+              <small>支持高清拍照或从相册选择</small>
+            </>
+          )}
+          {loading ? (
+            <span className="capture-loading-layer">
+              <CloudCog size={48} className="animate-pulse" />
+              <strong>{loadingTitle}</strong>
+              <small>{loadingText}</small>
             </span>
-            <strong>{loading ? (analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图") : "上传图片"}</strong>
-            <small>{loading ? "请稍等，正在为草稿做准备" : "图片优先，也支持只写文字描述"}</small>
-          </>
-        )}
-      </button>
+          ) : null}
+        </button>
+        <div className="capture-photo-actions">
+          <button type="button" onClick={() => cameraInputRef.current?.click()} disabled={loading}>
+            <Camera size={18} />
+            {previewUrl ? "重新拍照" : "拍照"}
+          </button>
+          <button type="button" onClick={onPick} disabled={loading}>
+            <ImageIcon size={18} />
+            {previewUrl ? "更换照片" : "从相册选择"}
+          </button>
+        </div>
+      </section>
+
+      <label className="capture-text-card">
+        <span className="capture-block-title capture-block-title-row">
+          <span className="capture-block-icon"><Pencil size={18} /></span>
+          <span>
+            <p>文字补充</p>
+            <small>描述食材、烹饪方式、调味或进食感受（可选）</small>
+          </span>
+        </span>
+        <textarea
+          value={mealContext}
+          onChange={(event) => onContext(event.target.value)}
+          maxLength={contextLimit}
+          rows={3}
+          className="capture-textarea"
+          placeholder="例如：清蒸鲈鱼，少油少盐；米饭一小碗，炒青菜适量。"
+        />
+        <span className="capture-text-count">{contextCount}/{contextLimit}</span>
+      </label>
 
       <div className="capture-preference-card">
-        <div className="capture-block-title">
-          <p>识别偏好</p>
-          <span>帮助 AI 判断做法、油脂和份量</span>
+        <div className="capture-block-title capture-block-title-row">
+          <span className="capture-block-icon"><SlidersHorizontal size={18} /></span>
+          <span>
+            <p>识别偏好</p>
+            <small>为 AI 提供更多背景，提升识别准确度</small>
+          </span>
         </div>
         <div className="capture-preference-list">
           {MEAL_PREFERENCES.map((item) => {
@@ -1349,44 +1508,37 @@ function UploadPanel({
                 aria-pressed={active}
                 className={active ? "capture-preference-chip capture-preference-chip-active" : "capture-preference-chip"}
               >
+                {mealPreferenceIcon(item.key)}
                 <strong>{item.label}</strong>
-                <small>{item.hint}</small>
               </button>
             );
           })}
         </div>
       </div>
 
-      <label className="capture-text-card">
-        <span className="capture-block-title">
-          <p>文字补充</p>
-          <span>重量、做法、店铺和规格越具体越好</span>
-        </span>
-        <textarea
-          value={mealContext}
-          onChange={(event) => onContext(event.target.value)}
-          rows={4}
-          className="capture-textarea"
-          placeholder="例如：米饭 180g，鸡胸肉 150g，少油自制。"
-        />
-      </label>
-      <p className="capture-help">
-        {hasDraft
-          ? "识别不准确时，可补充食物名称、重量、做法或店铺，再让 AI 修正草稿。只有确认 kcal 后才会计入统计。"
-          : "支持图片加说明，也支持只写文字描述。补充重量、做法或店铺可提高准确度；分析后会先生成草稿，确认 kcal 才计入统计。"}
-      </p>
       <button
+        type="button"
         onClick={onAnalyze}
-        disabled={loading || !canAnalyze}
+        disabled={loading}
         className="capture-cta"
       >
-        {loading ? <CloudCog size={19} className="animate-pulse" /> : <Send size={19} />}
-        {loading ? (analysisPhase === "compressing" ? "正在压缩图片" : "AI 正在识图") : hasDraft ? "根据说明重新识别" : "开始 AI 识别"}
+        {loading ? <CloudCog size={23} className="animate-pulse" /> : <Sparkles size={26} />}
+        <span>
+          <strong>{actionTitle}</strong>
+          <small>{actionHint}</small>
+        </span>
       </button>
       {error ? <p className="capture-error">{error}</p> : null}
       {draftContent ? <div className="capture-draft-wrap">{draftContent}</div> : null}
     </section>
   );
+}
+
+function mealPreferenceIcon(preference: MealPreference) {
+  if (preference === "light") return <Leaf size={18} />;
+  if (preference === "takeout") return <ShoppingBag size={18} />;
+  if (preference === "homemade") return <ChefHat size={18} />;
+  return <Camera size={18} />;
 }
 
 function WeightInputCard({
@@ -1426,7 +1578,7 @@ function WeightInputCard({
           记录体重
         </button>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/illustrations/wellness-ingredients.webp" alt="" className="journal-weight-illustration" />
+        <img src="/illustrations/wellness-ingredients.webp" alt="" className="journal-weight-illustration" loading="lazy" decoding="async" />
       </section>
       {open ? (
         <BottomSheet title="记录体重" onClose={() => onOpen(false)}>
@@ -1530,623 +1682,6 @@ function DraftCard({
   );
 }
 
-function AnalysisPage({ dashboard }: { dashboard: Dashboard | null }) {
-  const [view, setView] = useState<AnalysisView>("correlation");
-  const summary = useMemo(() => buildAnalysisSummary(dashboard), [dashboard]);
-
-  return (
-    <section className="analysis-page">
-      <div className="analysis-hero">
-        <div className="analysis-hero-copy">
-          <p>Correlation Gallery</p>
-          <h1>数据关系</h1>
-          <span>探索摄入、缺口与体重变化的内在联系</span>
-        </div>
-      </div>
-      <div className="analysis-tabs" role="tablist" aria-label="分析视图">
-        {ANALYSIS_TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            role="tab"
-            aria-selected={view === tab.key}
-            className={view === tab.key ? "analysis-tab analysis-tab-active" : "analysis-tab"}
-            onClick={() => setView(tab.key)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-      {view === "correlation" ? <CorrelationAnalysis summary={summary} /> : null}
-      {view === "calories" ? <CaloriesAnalysis dashboard={dashboard} summary={summary} /> : null}
-      {view === "weight" ? <WeightAnalysis dashboard={dashboard} summary={summary} /> : null}
-      {view === "meals" ? <MealSlotAnalysis summary={summary} /> : null}
-    </section>
-  );
-}
-
-function CorrelationAnalysis({ summary }: { summary: AnalysisSummary }) {
-  const hasEnoughData = summary.validCorrelationPoints >= 5;
-  return (
-    <div className="space-y-4">
-      <section className="analysis-card analysis-main-card">
-        <div className="analysis-card-header">
-          <div>
-            <p>Relationship Map</p>
-            <h2>{summary.primarySignalTitle}</h2>
-          </div>
-          <span>近 {CORRELATION_WINDOW_DAYS} 天</span>
-        </div>
-        {hasEnoughData ? (
-          <CorrelationChart summary={summary} />
-        ) : (
-          <div className="analysis-empty-card">
-            <Database size={24} />
-            <strong>记录满 7 天后生成洞察</strong>
-            <p>每个餐别至少需要 5 组有效的餐别热量与次日体重记录，才能参与自动发现。</p>
-          </div>
-        )}
-      </section>
-
-      <section className="analysis-score-card">
-        <div>
-          <p>相关指数</p>
-          <strong>{summary.correlation == null ? "--" : Math.abs(summary.correlation).toFixed(2)}</strong>
-          <span>{summary.correlationLabel}</span>
-        </div>
-        <div>
-          <p><Lightbulb size={15} /> 建议</p>
-          <strong>{summary.recommendationTitle}</strong>
-          <span>{summary.recommendation}</span>
-        </div>
-      </section>
-
-      <div className="analysis-mini-grid">
-        <AnalysisMiniCard icon={<Utensils size={19} />} title="早餐稳定度" value={percentMetric(summary.breakfastVariation)} status={summary.breakfastStatus} accent="sage" />
-        <AnalysisMiniCard icon={<Flame size={19} />} title={`${summary.primarySlotLabel}波动`} value={percentMetric(summary.primarySlotVariation)} status={summary.primarySlotStatus} accent="coral" />
-        <AnalysisMiniCard icon={<Target size={19} />} title="缺口达标率" value={percentMetric(summary.deficitRate)} status={summary.deficitStatus} accent="sage" />
-      </div>
-
-      <InsightPanel summary={summary} />
-    </div>
-  );
-}
-
-function CaloriesAnalysis({ dashboard, summary }: { dashboard: Dashboard | null; summary: AnalysisSummary }) {
-  return (
-    <section className="analysis-card">
-      <div className="analysis-card-header">
-        <div>
-          <p>Calorie Summary</p>
-          <h2>热量趋势摘要</h2>
-        </div>
-        <span>本周</span>
-      </div>
-      <ComboTrendChart days={dashboard?.days || []} compact />
-      <div className="analysis-summary-grid">
-        <SmallStat label="本周累计缺口" value={kcalText(dashboard?.weekDeficitKcal ?? dashboard?.sevenDayDeficitKcal)} compact />
-        <SmallStat label="日均摄入" value={kcalText(summary.averageIntakeKcal)} compact />
-        <SmallStat label="预计下降" value={`${dashboard?.predictedWeightLossJin.toFixed(2) || "0.00"} 斤`} compact />
-      </div>
-    </section>
-  );
-}
-
-function WeightAnalysis({ dashboard, summary }: { dashboard: Dashboard | null; summary: AnalysisSummary }) {
-  return (
-    <section className="analysis-card">
-      <div className="analysis-card-header">
-        <div>
-          <p>Weight Summary</p>
-          <h2>体重趋势摘要</h2>
-        </div>
-        <span>本周</span>
-      </div>
-      <WeightLineChart days={dashboard?.days || []} />
-      <div className="analysis-summary-grid">
-        <SmallStat label="最新体重" value={latestWeightText(dashboard?.days || [])} compact />
-        <SmallStat label="近 14 天变化" value={summary.weightChangeText} compact />
-        <SmallStat label="有效记录" value={`${summary.weightRecordCount} 天`} compact />
-      </div>
-    </section>
-  );
-}
-
-function MealSlotAnalysis({ summary }: { summary: AnalysisSummary }) {
-  return (
-    <section className="analysis-card">
-      <div className="analysis-card-header">
-        <div>
-          <p>Meal Slot Ranking</p>
-          <h2>餐别相关性排序</h2>
-        </div>
-        <span>近 14 天</span>
-      </div>
-      <div className="analysis-slot-list">
-        {summary.slotCorrelations.map((slot) => (
-          <div key={slot.slot} className="analysis-slot-row">
-            <span>{slot.label}</span>
-            <div><i style={{ width: `${Math.round(slot.absCorrelation * 100)}%` }} /></div>
-            <strong>{slot.eligible && slot.correlation != null ? slot.correlation.toFixed(2) : "样本不足"}</strong>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function CorrelationChart({ summary }: { summary: AnalysisSummary }) {
-  const width = 720;
-  const height = 330;
-  const padding = { top: 54, right: 34, bottom: 48, left: 50 };
-  const chartW = width - padding.left - padding.right;
-  const chartH = height - padding.top - padding.bottom;
-  const days = summary.recentDays;
-  const x = (index: number) => padding.left + (days.length <= 1 ? chartW / 2 : (chartW / (days.length - 1)) * index);
-  const primarySlot = summary.primarySignal?.slot || "dinner";
-  const primarySlotKcal = days.map((day) => mealSlotKcal(day, primarySlot));
-  const maxKcal = niceCeil(Math.max(800, ...primarySlotKcal, ...days.map((day) => Math.max(0, day.deficitKcal || 0))));
-  const yKcal = (value: number) => padding.top + ((maxKcal - value) / maxKcal) * chartH;
-  const deltas = days.map((day) => dailyWeightDelta(day)).filter((value): value is number => value != null);
-  const maxAbsDelta = Math.max(0.3, ...deltas.map((value) => Math.abs(value)));
-  const yDelta = (value: number) => padding.top + ((maxAbsDelta - value) / (maxAbsDelta * 2)) * chartH;
-  const intakePoints = primarySlotKcal.map((value, index) => `${x(index)},${yKcal(value || 0)}`).join(" ");
-  const deficitPoints = days.map((day, index) => `${x(index)},${yKcal(Math.max(0, day.deficitKcal || 0))}`).join(" ");
-  const highlight = summary.strongestPair;
-  const highlightX = highlight == null ? null : x(days.findIndex((day) => day.dateKey === highlight.dateKey));
-
-  return (
-    <div className="analysis-chart-wrap">
-      <div className="analysis-legend">
-        <span><i className="analysis-dot analysis-dot-coral" />{summary.primarySlotLabel}热量</span>
-        <span><i className="analysis-dot analysis-dot-sage" />热量缺口</span>
-        <span><i className="analysis-dot analysis-dot-oat" />体重变化</span>
-      </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="analysis-correlation-svg" role="img" aria-label="摄入、热量缺口与体重变化关系图">
-        {[0, Math.round(maxKcal / 2), maxKcal].map((tick) => (
-          <g key={tick}>
-            <line x1={padding.left} x2={width - padding.right} y1={yKcal(tick)} y2={yKcal(tick)} stroke="rgba(95, 88, 78, 0.09)" />
-            <text x={padding.left - 10} y={yKcal(tick) + 4} textAnchor="end" className="fill-[#8a8f88] text-[13px]">
-              {tick}
-            </text>
-          </g>
-        ))}
-        <polyline points={intakePoints} fill="none" stroke="#dd7858" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-        <polyline points={deficitPoints} fill="none" stroke="#6f9677" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-        {days.map((day, index) => {
-          const delta = dailyWeightDelta(day);
-          if (delta == null) return null;
-          return <circle key={`${day.dateKey}-delta`} cx={x(index)} cy={yDelta(delta)} r={Math.min(14, Math.max(7, Math.abs(delta) * 28 + 7))} fill="#ead8bd" fillOpacity="0.72" stroke="#d8bea0" />;
-        })}
-        {highlightX != null ? (
-          <g>
-            <line x1={highlightX} x2={highlightX} y1={padding.top + 24} y2={height - padding.bottom} stroke="#dfcbb6" strokeDasharray="6 8" />
-            <foreignObject x={Math.min(width - 246, Math.max(76, highlightX - 112))} y="36" width="224" height="58">
-              <div className="analysis-chart-callout">{summary.chartCallout}</div>
-            </foreignObject>
-          </g>
-        ) : null}
-        {days.map((day, index) => (
-          <text key={`${day.dateKey}-label`} x={x(index)} y={height - 24} textAnchor="middle" className="fill-[#8a8f88] text-[12px]">
-            {index % 2 === 0 ? day.dateKey.slice(5) : ""}
-          </text>
-        ))}
-      </svg>
-    </div>
-  );
-}
-
-function AnalysisMiniCard({ icon, title, value, status, accent }: { icon: React.ReactNode; title: string; value: string; status: string; accent: "sage" | "coral" }) {
-  return (
-    <div className={`analysis-mini-card analysis-mini-${accent}`}>
-      <div>{icon}</div>
-      <p>{title}</p>
-      <strong>{value}</strong>
-      <span>{status}</span>
-    </div>
-  );
-}
-
-function InsightPanel({ summary }: { summary: AnalysisSummary }) {
-  const [aiInsight, setAiInsight] = useState<AiInsight | null>(null);
-  const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "ready" | "cached" | "error">("idle");
-
-  useEffect(() => {
-    if (!summary.aiPayload || summary.validCorrelationPoints < 5) {
-      void Promise.resolve().then(() => {
-        setAiInsight(null);
-        setAiStatus("idle");
-      });
-      return;
-    }
-
-    let cancelled = false;
-    const cacheKey = `tracker-ai-insight:${summary.dateKey}:${summary.analysisFingerprint}`;
-
-    void (async () => {
-      await Promise.resolve();
-      try {
-        const cached = window.localStorage.getItem(cacheKey);
-        if (cached) {
-          const parsed = JSON.parse(cached) as AiInsight;
-          if (!cancelled) {
-            setAiInsight(parsed);
-            setAiStatus("cached");
-          }
-          return;
-        }
-      } catch {
-        // Ignore cache parsing issues and request a fresh explanation.
-      }
-
-      if (cancelled) return;
-      setAiStatus("loading");
-      setAiInsight(null);
-      fetch("/api/analysis/insights", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(summary.aiPayload)
-      })
-        .then(async (response) => {
-          if (!response.ok) throw new Error("AI 数据解读失败");
-          return response.json() as Promise<{ insight: AiInsight }>;
-        })
-        .then((data) => {
-          if (cancelled) return;
-          setAiInsight(data.insight);
-          setAiStatus("ready");
-          try {
-            window.localStorage.setItem(cacheKey, JSON.stringify(data.insight));
-          } catch {
-            // Cache is an optimization only.
-          }
-        })
-        .catch(() => {
-          if (!cancelled) setAiStatus("error");
-        });
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [summary.aiPayload, summary.analysisFingerprint, summary.dateKey, summary.validCorrelationPoints]);
-
-  const insights = aiInsight?.insights?.length ? aiInsight.insights : summary.insights;
-  const suggestions = aiInsight?.suggestions || [];
-  const cautions = aiInsight?.cautions || [];
-
-  return (
-    <section className="analysis-insight-card">
-      <div className="analysis-insight-title">
-        <Leaf size={22} />
-        <div>
-          <p>{aiInsight?.summaryTitle || "Insight 洞察"}</p>
-          <h2>{aiStatus === "loading" ? "正在生成 AI 数据解读" : aiStatus === "ready" || aiStatus === "cached" ? "AI 数据解读" : "本地数据解读"}</h2>
-        </div>
-      </div>
-      <div className="analysis-insight-list">
-        {aiStatus === "loading" ? <p>我正在结合四餐相关性排名、体重变化和缺口达标率生成更自然的解释。</p> : null}
-        {insights.map((insight) => (
-          <p key={insight}>{insight}</p>
-        ))}
-        {suggestions.map((suggestion) => (
-          <p key={suggestion} className="analysis-insight-suggestion">建议：{suggestion}</p>
-        ))}
-        {cautions.map((caution) => (
-          <p key={caution} className="analysis-insight-caution">提示：{caution}</p>
-        ))}
-        {aiStatus === "error" ? <p className="analysis-insight-caution">AI 解读暂时不可用，已保留本地算法洞察。</p> : null}
-      </div>
-    </section>
-  );
-}
-
-type AnalysisSourceDay = DashboardDay & { meals?: MealEntry[] };
-type SlotWeightPair = { dateKey: string; slotKcal: number; nextWeightDeltaKg: number };
-type SlotCorrelationSummary = {
-  slot: MealSlot;
-  label: string;
-  pairs: SlotWeightPair[];
-  sampleSize: number;
-  correlation: number | null;
-  absCorrelation: number;
-  eligible: boolean;
-  meaningful: boolean;
-  strengthLabel: string;
-  averageKcal: number;
-  variation: number | null;
-  strongestPair: SlotWeightPair | null;
-  recommendation: string;
-};
-type AnalysisSummary = ReturnType<typeof buildAnalysisSummary>;
-
-function buildAnalysisSummary(dashboard: Dashboard | null) {
-  const sourceDays: AnalysisSourceDay[] = (dashboard?.analysisDays?.length ? dashboard.analysisDays : dashboard?.days || []).slice();
-  const recentDays = sourceDays.slice(-CORRELATION_WINDOW_DAYS);
-  const target = dashboard?.dailyDeficitTargetKcal || 500;
-  const slotCorrelations = MEAL_SLOTS.map((slot) => buildSlotCorrelation(recentDays, slot.key, slot.label))
-    .sort((a, b) => Number(b.eligible) - Number(a.eligible) || b.absCorrelation - a.absCorrelation || b.sampleSize - a.sampleSize);
-  const primarySignal = slotCorrelations.find((slot) => slot.eligible) || null;
-  const displaySignal = primarySignal || slotCorrelations[0] || null;
-  const breakfastValues = recentDays.map((day) => mealSlotKcal(day, "breakfast")).filter((value) => value > 0);
-  const deficitValues = recentDays.map((day) => day.deficitKcal).filter((value): value is number => value != null);
-  const weightValues = recentDays.map((day) => day.weightKg).filter((value): value is number => value != null);
-  const breakfastVariation = coefficientOfVariation(breakfastValues);
-  const deficitRate = deficitValues.length ? deficitValues.filter((value) => value >= target).length / deficitValues.length : null;
-  const averageIntakeKcal = recentDays.length ? recentDays.reduce((total, day) => total + (day.intakeKcal || 0), 0) / recentDays.length : null;
-  const correlation = primarySignal?.correlation ?? null;
-  const correlationLabel = primarySignal == null ? "等待更多记录" : primarySignal.strengthLabel;
-  const primarySignalTitle = primarySignal == null
-    ? "继续记录，自动发现规律"
-    : primarySignal.meaningful
-      ? `${primarySignal.label}热量与次日体重变化最相关`
-      : "暂未发现明显规律";
-  const recommendationTitle = primarySignal?.meaningful ? `优先稳定${primarySignal.label}` : "继续积累数据";
-  const recommendation = primarySignal?.recommendation || "四个餐别暂时没有足够强的个人规律，先保持完整记录和固定称重时间。";
-  const primarySlotLabel = displaySignal?.label || "餐别";
-  const primarySlotVariation = displaySignal?.variation ?? null;
-  const primarySlotStatus = variationStatus(primarySlotVariation, primarySlotLabel);
-  const chartCallout = primarySignal?.meaningful
-    ? `${primarySignal.label}热量变化时，次日体重波动更值得观察`
-    : "当前相关性较弱，继续记录会让判断更可靠";
-  const insights = buildInsightMessages({
-    primarySignal,
-    validCorrelationPoints: primarySignal?.sampleSize ?? displaySignal?.sampleSize ?? 0,
-    breakfastVariation,
-    deficitRate
-  });
-  const analysisFingerprint = hashString(JSON.stringify({
-    dateKey: dashboard?.dateKey || "",
-    target,
-    slots: slotCorrelations.map(({ slot, sampleSize, correlation, averageKcal, variation }) => ({ slot, sampleSize, correlation, averageKcal, variation })),
-    days: recentDays.map((day) => ({
-      dateKey: day.dateKey,
-      intakeKcal: day.intakeKcal,
-      deficitKcal: day.deficitKcal,
-      weightKg: day.weightKg,
-      slots: Object.fromEntries(MEAL_SLOTS.map((slot) => [slot.key, mealSlotKcal(day, slot.key)]))
-    }))
-  }));
-  const aiPayload = dashboard?.dateKey
-    ? {
-        dateKey: dashboard.dateKey,
-        fingerprint: analysisFingerprint,
-        primarySignal: primarySignal
-          ? {
-              slot: primarySignal.slot,
-              label: primarySignal.label,
-              correlation: primarySignal.correlation,
-              absCorrelation: primarySignal.absCorrelation,
-              sampleSize: primarySignal.sampleSize,
-              strengthLabel: primarySignal.strengthLabel,
-              meaningful: primarySignal.meaningful,
-              recommendation: primarySignal.recommendation
-            }
-          : null,
-        slotCorrelations: slotCorrelations.map(({ slot, label, correlation, absCorrelation, sampleSize, eligible, strengthLabel, averageKcal, variation }) => ({
-          slot,
-          label,
-          correlation,
-          absCorrelation,
-          sampleSize,
-          eligible,
-          strengthLabel,
-          averageKcal,
-          variation
-        })),
-        metrics: {
-          deficitRate,
-          breakfastVariation,
-          primarySlotVariation,
-          averageIntakeKcal,
-          weightChangeText: weightChangeText(weightValues),
-          weightRecordCount: weightValues.length,
-          dailyDeficitTargetKcal: target
-        },
-        recentDays: recentDays.map((day) => ({
-          dateKey: day.dateKey,
-          intakeKcal: day.intakeKcal,
-          deficitKcal: day.deficitKcal,
-          weightKg: day.weightKg,
-          weightDeltaKg: dailyWeightDelta(day),
-          slots: Object.fromEntries(MEAL_SLOTS.map((slot) => [slot.key, mealSlotKcal(day, slot.key)]))
-        }))
-      }
-    : null;
-
-  return {
-    dateKey: dashboard?.dateKey || "unknown",
-    recentDays,
-    correlation,
-    validCorrelationPoints: primarySignal?.sampleSize ?? displaySignal?.sampleSize ?? 0,
-    strongestPair: primarySignal?.strongestPair ?? null,
-    primarySignal,
-    primarySignalTitle,
-    primarySlotLabel,
-    primarySlotVariation,
-    primarySlotStatus,
-    chartCallout,
-    recommendationTitle,
-    breakfastVariation,
-    deficitRate,
-    averageIntakeKcal,
-    weightRecordCount: weightValues.length,
-    weightChangeText: weightChangeText(weightValues),
-    breakfastStatus: variationStatus(breakfastVariation, "早餐"),
-    deficitStatus: deficitRateStatus(deficitRate),
-    correlationLabel,
-    recommendation,
-    insights,
-    slotCorrelations,
-    analysisFingerprint,
-    aiPayload
-  };
-}
-
-function buildSlotCorrelation(days: AnalysisSourceDay[], slot: MealSlot, label: string): SlotCorrelationSummary {
-  const pairs = buildSlotWeightPairs(days, slot);
-  const values = days.map((day) => mealSlotKcal(day, slot)).filter((value) => value > 0);
-  const correlation = pairs.length >= 2 ? pearsonCorrelation(pairs.map((pair) => pair.slotKcal), pairs.map((pair) => pair.nextWeightDeltaKg)) : null;
-  const absCorrelation = correlation == null ? 0 : Math.abs(correlation);
-  const sampleSize = pairs.length;
-  const eligible = sampleSize >= 5;
-  const meaningful = eligible && absCorrelation >= 0.35;
-  const averageKcal = values.length ? values.reduce((total, value) => total + value, 0) / values.length : 0;
-  const variation = coefficientOfVariation(values);
-  const strongestPair = pairs.reduce<SlotWeightPair | null>((current, pair) => {
-    if (!current) return pair;
-    return Math.abs(pair.nextWeightDeltaKg) > Math.abs(current.nextWeightDeltaKg) ? pair : current;
-  }, null);
-  return {
-    slot,
-    label,
-    pairs,
-    sampleSize,
-    correlation,
-    absCorrelation,
-    eligible,
-    meaningful,
-    strengthLabel: eligible && correlation != null ? correlationStrengthLabel(correlation) : "样本不足",
-    averageKcal,
-    variation,
-    strongestPair,
-    recommendation: slotRecommendation(label, correlation, averageKcal, meaningful)
-  };
-}
-
-function buildSlotWeightPairs(days: AnalysisSourceDay[], slot: MealSlot) {
-  const pairs: SlotWeightPair[] = [];
-  for (let index = 0; index < days.length - 1; index += 1) {
-    const day = days[index];
-    const next = days[index + 1];
-    const slotKcal = mealSlotKcal(day, slot);
-    if (slotKcal <= 0 || day.weightKg == null || next.weightKg == null) continue;
-    pairs.push({
-      dateKey: day.dateKey,
-      slotKcal,
-      nextWeightDeltaKg: Number((next.weightKg - day.weightKg).toFixed(2))
-    });
-  }
-  return pairs;
-}
-
-function mealSlotKcal(day: AnalysisSourceDay, slot: MealSlot) {
-  return (day.meals || [])
-    .filter((meal) => meal.mealSlot === slot)
-    .reduce((total, meal) => total + (meal.finalKcal || 0), 0);
-}
-
-function slotRecommendation(label: string, correlation: number | null, averageKcal: number, meaningful: boolean) {
-  if (!meaningful || correlation == null) {
-    return `${label}还没有形成足够强的信号，继续记录 7-14 天会更可靠。`;
-  }
-  const target = Math.max(80, Math.round(Math.min(averageKcal, averageKcal * 0.92 || DEFAULT_SLOT_TARGET_KCAL) / 10) * 10);
-  if (correlation > 0) {
-    return `${label}热量越高时，次日体重波动越明显。先把${label}稳定在约 ${target} kcal 附近。`;
-  }
-  return `${label}热量与次日体重呈负相关，但这不代表应该增加热量；建议先观察结构、盐分和称重时间。`;
-}
-
-function dailyWeightDelta(day: AnalysisSourceDay) {
-  if (day.weightKg == null || day.previousWeightKg == null) return null;
-  return Number((day.weightKg - day.previousWeightKg).toFixed(2));
-}
-
-function pearsonCorrelation(a: number[], b: number[]) {
-  if (a.length !== b.length || a.length < 2) return null;
-  const meanA = a.reduce((total, value) => total + value, 0) / a.length;
-  const meanB = b.reduce((total, value) => total + value, 0) / b.length;
-  const numerator = a.reduce((total, value, index) => total + (value - meanA) * (b[index] - meanB), 0);
-  const varianceA = a.reduce((total, value) => total + (value - meanA) ** 2, 0);
-  const varianceB = b.reduce((total, value) => total + (value - meanB) ** 2, 0);
-  const denominator = Math.sqrt(varianceA * varianceB);
-  return denominator === 0 ? null : Math.max(-1, Math.min(1, numerator / denominator));
-}
-
-function coefficientOfVariation(values: number[]) {
-  if (values.length < 2) return null;
-  const mean = values.reduce((total, value) => total + value, 0) / values.length;
-  if (mean <= 0) return null;
-  const variance = values.reduce((total, value) => total + (value - mean) ** 2, 0) / values.length;
-  return Math.sqrt(variance) / mean;
-}
-
-function percentMetric(value: number | null) {
-  return value == null ? "--" : `${Math.round(value * 100)}%`;
-}
-
-function correlationStrengthLabel(value: number) {
-  const abs = Math.abs(value);
-  if (abs < 0.35) return "弱相关";
-  if (abs < 0.65) return value > 0 ? "中等正相关" : "中等负相关";
-  return value > 0 ? "较强正相关" : "较强负相关";
-}
-
-function variationStatus(value: number | null, label: string) {
-  if (value == null) return "待记录";
-  if (value < 0.16) return "稳定";
-  if (value < 0.28) return `${label}波动适中`;
-  return `${label}偏高`;
-}
-
-function deficitRateStatus(value: number | null) {
-  if (value == null) return "待同步";
-  if (value >= 0.7) return "良好";
-  if (value >= 0.45) return "一般";
-  return "需加强";
-}
-
-function weightChangeText(values: number[]) {
-  if (values.length < 2) return "--";
-  const delta = values[values.length - 1] - values[0];
-  const sign = delta > 0 ? "+" : "";
-  return `${sign}${delta.toFixed(1)} kg`;
-}
-
-function buildInsightMessages({
-  primarySignal,
-  validCorrelationPoints,
-  breakfastVariation,
-  deficitRate
-}: {
-  primarySignal: SlotCorrelationSummary | null;
-  validCorrelationPoints: number;
-  breakfastVariation: number | null;
-  deficitRate: number | null;
-}) {
-  if (validCorrelationPoints < 5) {
-    return ["记录满 7 天并持续录入体重后，我会自动比较早餐、午餐、晚餐和加餐的相关性。", "当前先保持每日餐别记录完整，尤其是加餐、晚餐和次日体重记录。"];
-  }
-  const messages: string[] = [];
-  if (primarySignal?.meaningful && primarySignal.correlation != null) {
-    messages.push(`${primarySignal.label}是当前四个餐别里最明显的信号，相关指数 ${primarySignal.absCorrelation.toFixed(2)}。`);
-    messages.push(primarySignal.recommendation);
-  } else if (primarySignal) {
-    messages.push(`四个餐别都已参与计算，目前最强的是${primarySignal.label}，但仍属于弱相关。`);
-  } else {
-    messages.push("四个餐别暂未出现足够可靠的相关性，体重变化可能更多来自水分、运动或同步数据波动。");
-  }
-  if (deficitRate != null && deficitRate >= 0.7) {
-    messages.push("本阶段缺口达标率良好，执行节奏比较稳定。");
-  } else {
-    messages.push("缺口达标天数偏少，可以先把每日缺口稳定到 500 kcal 附近。");
-  }
-  if (breakfastVariation != null && breakfastVariation < 0.16) {
-    messages.push("早餐结构稳定，这是全天摄入更容易受控的好信号。");
-  } else if (primarySignal?.variation != null && primarySignal.variation > 0.28) {
-    messages.push(`${primarySignal.label}波动偏高，可以先固定一个常用模板，再观察相关性是否下降。`);
-  }
-  return messages;
-}
-
-function hashString(value: string) {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) | 0;
-  }
-  return (hash >>> 0).toString(36);
-}
-
 function QuickPresetsCard({
   presets,
   addingId,
@@ -2167,6 +1702,9 @@ function QuickPresetsCard({
   const [editableItems, setEditableItems] = useState<Record<string, MealPresetItem[]>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [studioView, setStudioView] = useState<QuickStudioView>("presets");
+  const [manualCreating, setManualCreating] = useState(false);
+  const [manualPresetName, setManualPresetName] = useState("");
+  const [manualItems, setManualItems] = useState<ManualPresetItem[]>(() => [emptyManualPresetItem()]);
   const [createDescription, setCreateDescription] = useState("");
   const [createFile, setCreateFile] = useState<File | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -2177,6 +1715,7 @@ function QuickPresetsCard({
   const [libraryDraft, setLibraryDraft] = useState<NutritionSourceDraft>(emptyNutritionSource());
   const [libraryAnalyzing, setLibraryAnalyzing] = useState(false);
   const [librarySaving, setLibrarySaving] = useState(false);
+  const manualBuilderRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -2197,6 +1736,14 @@ function QuickPresetsCard({
   useEffect(() => () => {
     if (createPreviewUrl) URL.revokeObjectURL(createPreviewUrl);
   }, [createPreviewUrl]);
+
+  useEffect(() => {
+    if (!manualCreating || studioView !== "presets") return;
+    const frame = window.requestAnimationFrame(() => {
+      manualBuilderRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [manualCreating, studioView]);
 
   function togglePreset(preset: MealPreset) {
     const nextId = expandedId === preset.id ? null : preset.id;
@@ -2412,6 +1959,64 @@ function QuickPresetsCard({
     await onReload();
   }
 
+  function updateManualItem(itemId: string, patch: Partial<ManualPresetItem>) {
+    setManualItems((current) => current.map((item) => (item.id === itemId ? { ...item, ...patch } : item)));
+  }
+
+  function resetManualPreset() {
+    setManualPresetName("");
+    setManualItems([emptyManualPresetItem()]);
+  }
+
+  async function saveManualPreset() {
+    const selectedItems = manualItems.map((item) => {
+      const source = nutritionSources.find((candidate) => candidate.id === item.nutritionSourceId);
+      const gramsValue = parsePositiveGrams(item.grams);
+      if (!source || gramsValue == null) return null;
+      const kcal = Math.round((source.kcalPer100g * gramsValue) / 100);
+      return {
+        name: source.name,
+        portion: `${gramsValue}g`,
+        defaultGrams: gramsValue,
+        kcal,
+        confidence: source.confidence,
+        calculationSource: "nutrition_label",
+        nutritionSourceId: source.id
+      };
+    }).filter((item): item is {
+      name: string;
+      portion: string;
+      defaultGrams: number;
+      kcal: number;
+      confidence: number | null;
+      calculationSource: string;
+      nutritionSourceId: string;
+    } => Boolean(item));
+
+    if (!nutritionSources.length) return onError("请先在营养库添加食物，再本地搭配模板");
+    if (manualHasIncompleteRows) return onError("请补完整每一行的食物和克数，或删除未完成的行");
+    if (!selectedItems.length) return onError("请选择营养库食物并填写克数");
+
+    setSavingId("manual");
+    const response = await fetch("/api/meal-presets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: manualPresetName.trim() || selectedItems.map((item) => item.name).join("、").slice(0, 60) || "本地搭配模板",
+        imageUrl: null,
+        description: "本地营养库搭配",
+        baseKcal: selectedItems.reduce((total, item) => total + item.kcal, 0),
+        items: selectedItems
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    setSavingId(null);
+    if (!response.ok) return onError(data.error || "本地模板保存失败");
+    resetManualPreset();
+    setManualCreating(false);
+    await onReload();
+  }
+
   const expandedPreset = presets.find((preset) => preset.id === expandedId) || null;
   const expandedItems = expandedPreset ? editableItems[expandedPreset.id] || expandedPreset.items : [];
   const favoritePreset = presets.reduce<MealPreset | null>((best, preset) => {
@@ -2419,6 +2024,21 @@ function QuickPresetsCard({
     return preset.usageCount > best.usageCount ? preset : best;
   }, null);
   const hasCreateInput = Boolean(createFile || createDescription.trim());
+  const manualRows = manualItems.map((item) => {
+    const source = nutritionSources.find((candidate) => candidate.id === item.nutritionSourceId) || null;
+    const gramsValue = parsePositiveGrams(item.grams);
+    return {
+      item,
+      source,
+      gramsValue,
+      hasInput: Boolean(item.nutritionSourceId || item.grams.trim()),
+      kcal: source && gramsValue != null ? Math.round((source.kcalPer100g * gramsValue) / 100) : 0
+    };
+  });
+  const manualTotalKcal = manualRows.reduce((total, row) => total + row.kcal, 0);
+  const manualHasIncompleteRows = manualRows.some((row) => row.hasInput && (!row.source || row.gramsValue == null));
+  const manualValidItemCount = manualRows.filter((row) => row.source && row.gramsValue != null).length;
+  const manualCanSave = Boolean(nutritionSources.length && manualValidItemCount && !manualHasIncompleteRows && manualTotalKcal > 0);
 
   return (
     <section className="plan-studio-page">
@@ -2475,11 +2095,85 @@ function QuickPresetsCard({
               <p>QUICK MEALS</p>
               <h2>常用模板</h2>
             </div>
-            <button type="button" onClick={() => setStudioView("ai")} className="plan-soft-button">
+            <button type="button" onClick={() => setManualCreating((value) => !value)} className="plan-soft-button">
               <Plus size={15} />
-              新建
+              {manualCreating ? "收起" : "新建"}
             </button>
           </div>
+          {manualCreating ? (
+            <div ref={manualBuilderRef} className="plan-manual-builder">
+              <div className="plan-new-preset-head">
+                <div>
+                  <p>LOCAL BUILDER</p>
+                  <h3>本地搭配模板</h3>
+                </div>
+                <span>{manualTotalKcal} kcal</span>
+              </div>
+              {nutritionSources.length ? (
+                <label className="plan-field">
+                  <span>模板名称</span>
+                  <input value={manualPresetName} onChange={(event) => setManualPresetName(event.target.value)} placeholder="例如：工作日早餐" />
+                </label>
+              ) : null}
+              {nutritionSources.length ? (
+                <div className="plan-manual-items">
+                  {manualRows.map(({ item, source, gramsValue, kcal, hasInput }, index) => {
+                    const incomplete = hasInput && (!source || gramsValue == null);
+                    return (
+                      <div key={item.id} className="plan-manual-item">
+                        <label>
+                          <span>营养库食物</span>
+                          <select value={item.nutritionSourceId} onChange={(event) => updateManualItem(item.id, { nutritionSourceId: event.target.value })}>
+                            <option value="">选择食物</option>
+                            {nutritionSources.map((sourceItem) => (
+                              <option key={sourceItem.id} value={sourceItem.id}>{sourceItem.name} · {sourceItem.kcalPer100g} kcal/100g</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          <span>默认克数</span>
+                          <input value={item.grams} onChange={(event) => updateManualItem(item.id, { grams: event.target.value })} inputMode="decimal" placeholder="例如 120" aria-invalid={incomplete && item.grams.trim() ? true : undefined} />
+                        </label>
+                        <div className="plan-manual-item-foot">
+                          <small className={incomplete ? "plan-manual-warning" : undefined}>{incomplete ? "请选择食物并填写大于 0 的克数" : source ? `${source.name} · ${kcal} kcal` : "从营养库选择后自动换算热量"}</small>
+                          <button type="button" onClick={() => setManualItems((current) => current.filter((candidate) => candidate.id !== item.id))} disabled={manualItems.length <= 1} aria-label={`删除第 ${index + 1} 项`}>
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="plan-manual-empty">
+                  <Database size={18} />
+                  <strong>先建立营养库</strong>
+                  <span>本地创建会按照营养库食物和克数自动换算热量。</span>
+                  <button type="button" onClick={() => setStudioView("library")} className="plan-secondary-action">去添加食物</button>
+                </div>
+              )}
+              {nutritionSources.length ? (
+                <div className="plan-manual-actions">
+                  <button type="button" onClick={() => setManualItems((current) => [...current, emptyManualPresetItem()])} disabled={savingId === "manual"} className="plan-secondary-action">
+                    <Plus size={15} />
+                    添加食物
+                  </button>
+                  <button type="button" onClick={saveManualPreset} disabled={savingId === "manual" || !manualCanSave} className="plan-primary-action">
+                    <Save size={15} />
+                    {savingId === "manual" ? "保存中" : "保存模板"}
+                  </button>
+                </div>
+              ) : null}
+              {nutritionSources.length ? (
+                <p className={manualHasIncompleteRows ? "plan-manual-helper plan-manual-warning" : "plan-manual-helper"}>
+                  {manualHasIncompleteRows ? "有一行还没补完整，完善后即可保存。" : manualValidItemCount ? `${manualValidItemCount} 项食物，预计 ${manualTotalKcal} kcal。` : "从营养库选择食物，再填写默认克数。"}
+                </p>
+              ) : null}
+              <button type="button" onClick={() => setStudioView("ai")} className="plan-ai-link">
+                需要图片识别？切换到 AI 自动拆解
+              </button>
+            </div>
+          ) : null}
           {presets.length ? (
             <div className="plan-template-list">
               {presets.map((preset) => {
@@ -2519,12 +2213,12 @@ function QuickPresetsCard({
                 );
               })}
             </div>
-          ) : (
+          ) : manualCreating ? null : (
             <div className="plan-empty-card">
               <Sparkles size={18} />
               <strong>还没有常用餐食</strong>
-              <span>用 AI 新建一个模板，或从今日记录里存为常用。</span>
-              <button type="button" onClick={() => setStudioView("ai")} className="plan-primary-action">开始新建</button>
+              <span>优先从营养库本地搭配，也可以去 AI 新建自动拆解。</span>
+              <button type="button" onClick={() => setManualCreating(true)} className="plan-primary-action">本地新建</button>
             </div>
           )}
         </div>
@@ -2676,23 +2370,23 @@ function QuickPresetsCard({
           setExpandedId(null);
           setNutritionReview(null);
         }}>
-          <div className="space-y-3">
-            <p className="text-xs leading-5 text-slate-500">从个人营养库选择食物，或使用自定义名称。填写本次计入克数后，系统会按每 100g 热量精确换算。</p>
+          <div className="bottom-sheet-stack">
+            <p className="bottom-sheet-note">从个人营养库选择食物，或使用自定义名称。填写本次计入克数后，系统会按每 100g 热量精确换算。</p>
             {expandedItems.map((item, index) => (
-              <div key={item.id} className="rounded-lg border border-slate-200 bg-white p-3">
+              <div key={item.id} className="plan-edit-card">
                 <PresetItemEditor item={item} nutritionSources={nutritionSources} onChange={(patch) => updateEditableItem(expandedPreset.id, index, patch)} onSelectSource={(source) => updateEditableItem(expandedPreset.id, index, bindNutritionSource(item, source, currentGrams(item)))} onDelete={() => setEditableItems((current) => ({ ...current, [expandedPreset.id]: expandedItems.filter((_, itemIndex) => itemIndex !== index) }))} />
-                <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3">
-                  <label className="block min-w-0">
-                    <span className="mb-1 block text-xs font-medium text-slate-500">本次计入克数</span>
+                <div className="plan-edit-divider">
+                  <label className="plan-edit-field">
+                    <span>本次计入克数</span>
                     <GramsSelect value={currentGrams(item)} onChange={(value) => setCurrentGrams(item.id, value)} label={`${item.name} 本次克数`} />
                   </label>
-                  <label className="flex min-h-11 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-600">
+                  <label className="plan-upload-inline">
                     <FileText size={14} />
                     {nutritionUploading === `${expandedPreset.id}-${index}` ? "识别中" : item.nutritionSource ? "替换成分表" : "上传成分表"}
                     <input type="file" accept="image/*" className="hidden" disabled={Boolean(nutritionUploading)} onChange={(event) => event.target.files?.[0] && analyzeNutrition(event.target.files[0], expandedPreset, index)} />
                   </label>
                 </div>
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="plan-source-note">
                   {item.nutritionSource ? `营养库：${item.nutritionSource.name} · ${item.nutritionSource.kcalPer100g} kcal/100g` : "未绑定成分表，修改克数时由 AI 复核"}
                 </p>
               </div>
@@ -2700,18 +2394,18 @@ function QuickPresetsCard({
             {nutritionReview ? (
               <NutritionReviewCard review={nutritionReview} onChange={(source) => setNutritionReview({ ...nutritionReview, source })} onCancel={() => setNutritionReview(null)} onSave={saveNutritionSource} />
             ) : null}
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => setEditableItems((current) => ({ ...current, [expandedPreset.id]: [...expandedItems, emptyPresetItem(expandedPreset.id)] }))} className="flex min-h-11 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-600">
+            <div className="plan-edit-actions">
+              <button onClick={() => setEditableItems((current) => ({ ...current, [expandedPreset.id]: [...expandedItems, emptyPresetItem(expandedPreset.id)] }))} className="plan-secondary-action">
                 <Plus size={14} /> 添加食物
               </button>
-              <button onClick={() => savePresetItems(expandedPreset)} disabled={savingId === expandedPreset.id} className="flex min-h-11 items-center justify-center gap-1 rounded-lg border border-fuchsia-100 bg-white px-2 text-xs font-semibold text-fuchsia-700 disabled:opacity-60">
+              <button onClick={() => savePresetItems(expandedPreset)} disabled={savingId === expandedPreset.id} className="plan-secondary-action plan-secondary-action-accent">
                 <Save size={14} /> {savingId === expandedPreset.id ? "保存中" : "保存模板"}
               </button>
             </div>
             <button onClick={() => {
               onUse(expandedPreset, configuredItems(expandedPreset));
               setExpandedId(null);
-            }} disabled={addingId === expandedPreset.id} className="flex min-h-12 w-full items-center justify-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-sm font-semibold text-white transition hover:bg-fuchsia-700 disabled:opacity-60">
+            }} disabled={addingId === expandedPreset.id} className="plan-primary-action bottom-sheet-full-action">
               <Plus size={16} />
               {addingId === expandedPreset.id ? "计入中" : "确认计入"}
             </button>
@@ -2727,13 +2421,13 @@ const GRAMS_OPTIONS = ["", "25", "50", "75", "100", "125", "150", "200", "250", 
 function GramsSelect({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
   const [custom, setCustom] = useState(!GRAMS_OPTIONS.includes(value) && Boolean(value));
   return (
-    <div className={`grid min-w-0 gap-2 ${custom ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)]" : "grid-cols-1"}`}>
-      <select value={custom ? "custom" : value} onChange={(event) => event.target.value === "custom" ? setCustom(true) : (setCustom(false), onChange(event.target.value))} className="h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold outline-none" aria-label={label}>
+    <div className={`plan-grams-select ${custom ? "plan-grams-select-custom" : ""}`}>
+      <select value={custom ? "custom" : value} onChange={(event) => event.target.value === "custom" ? setCustom(true) : (setCustom(false), onChange(event.target.value))} className="plan-compact-control" aria-label={label}>
         <option value="">克数未填</option>
         {GRAMS_OPTIONS.slice(1, -1).map((grams) => <option key={grams} value={grams}>{grams}g</option>)}
         <option value="custom">自定义</option>
       </select>
-      {custom ? <input value={value} onChange={(event) => onChange(event.target.value)} inputMode="decimal" placeholder="克数" className="h-11 min-w-0 rounded-lg border border-slate-200 px-2 text-xs outline-none" aria-label={`${label}自定义`} /> : null}
+      {custom ? <input value={value} onChange={(event) => onChange(event.target.value)} inputMode="decimal" placeholder="克数" className="plan-compact-control" aria-label={`${label}自定义`} /> : null}
     </div>
   );
 }
@@ -2754,9 +2448,9 @@ function PresetItemEditor({
   onDelete: () => void;
 }) {
   return (
-    <div className={`grid gap-3 ${showGrams ? "sm:grid-cols-[minmax(0,1fr)_minmax(0,180px)_40px]" : "sm:grid-cols-[minmax(0,1fr)_40px]"} sm:items-end`}>
-      <label className="block min-w-0">
-        <span className="mb-1 block text-xs font-medium text-slate-500">选择食物</span>
+    <div className={`plan-preset-item-editor ${showGrams ? "plan-preset-item-editor-with-grams" : ""}`}>
+      <label className="plan-edit-field">
+        <span>选择食物</span>
         <select
           value={item.nutritionSourceId || "custom"}
           onChange={(event) => {
@@ -2767,16 +2461,16 @@ function PresetItemEditor({
               onChange({ nutritionSourceId: null, nutritionSource: null, calculationSource: "ai_estimate" });
             }
           }}
-          className="h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-fuchsia-400"
+          className="plan-compact-control"
           aria-label={`${item.name} 选择食物`}
         >
           <option value="custom">自定义食物</option>
           {nutritionSources.map((source) => <option key={source.id} value={source.id}>{source.name} · {source.kcalPer100g} kcal/100g</option>)}
         </select>
-        {!item.nutritionSourceId ? <input value={item.name} onChange={(event) => onChange({ name: event.target.value })} placeholder="填写自定义食物名称" className="mt-2 h-11 w-full min-w-0 rounded-lg border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-fuchsia-400" aria-label="自定义食物名称" /> : null}
+        {!item.nutritionSourceId ? <input value={item.name} onChange={(event) => onChange({ name: event.target.value })} placeholder="填写自定义食物名称" className="plan-compact-control plan-compact-control-spaced" aria-label="自定义食物名称" /> : null}
       </label>
-      {showGrams ? <label className="block min-w-0">
-        <span className="mb-1 block text-xs font-medium text-slate-500">计入克数</span>
+      {showGrams ? <label className="plan-edit-field">
+        <span>计入克数</span>
         <GramsSelect
           value={item.defaultGrams == null ? "" : String(item.defaultGrams)}
           onChange={(value) => {
@@ -2789,7 +2483,7 @@ function PresetItemEditor({
           label={`${item.name} 计入克数`}
         />
       </label> : null}
-      <button onClick={onDelete} className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:border-red-100 hover:bg-red-50 hover:text-red-600" aria-label={`删除 ${item.name}`}><Trash2 size={15} /></button>
+      <button onClick={onDelete} className="plan-icon-danger plan-delete-action" aria-label={`删除 ${item.name}`}><Trash2 size={15} /></button>
     </div>
   );
 }
@@ -2844,26 +2538,37 @@ function NutritionReviewCard({ review, onChange, onCancel, onSave }: { review: {
   const source = review.source;
   const numberValue = (value: string) => value ? Number(value) : null;
   return (
-    <div className="mt-4 rounded-lg border border-fuchsia-200 bg-fuchsia-50 p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div><p className="font-semibold">确认营养成分表</p><p className="mt-1 text-xs text-slate-500">AI 已换算为每 100g，请核对后保存到个人营养库。</p></div>
-        <button onClick={onCancel} className="flex h-11 w-11 items-center justify-center text-slate-400" aria-label="关闭"><X size={17} /></button>
+    <div className="plan-nutrition-review">
+      <div className="plan-nutrition-review-head">
+        <div><p>确认营养成分表</p><span>AI 已换算为每 100g，请核对后保存到个人营养库。</span></div>
+        <button onClick={onCancel} className="plan-icon-danger plan-delete-action" aria-label="关闭"><X size={17} /></button>
       </div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-6">
-        <input value={source.name} onChange={(event) => onChange({ ...source, name: event.target.value })} className="h-11 rounded-lg border border-slate-200 px-2 text-xs sm:col-span-2" aria-label="食品名称" />
-        <input value={source.kcalPer100g} onChange={(event) => onChange({ ...source, kcalPer100g: Number(event.target.value) })} inputMode="decimal" className="h-11 rounded-lg border border-slate-200 px-2 text-xs" aria-label="每100克热量" />
-        <input value={source.proteinPer100g ?? ""} onChange={(event) => onChange({ ...source, proteinPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="蛋白质 g" className="h-11 rounded-lg border border-slate-200 px-2 text-xs" />
-        <input value={source.fatPer100g ?? ""} onChange={(event) => onChange({ ...source, fatPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="脂肪 g" className="h-11 rounded-lg border border-slate-200 px-2 text-xs" />
-        <input value={source.carbsPer100g ?? ""} onChange={(event) => onChange({ ...source, carbsPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="碳水 g" className="h-11 rounded-lg border border-slate-200 px-2 text-xs" />
+      <div className="plan-nutrition-grid">
+        <input value={source.name} onChange={(event) => onChange({ ...source, name: event.target.value })} className="plan-compact-control plan-nutrition-name" aria-label="食品名称" />
+        <input value={source.kcalPer100g} onChange={(event) => onChange({ ...source, kcalPer100g: Number(event.target.value) })} inputMode="decimal" className="plan-compact-control" aria-label="每100克热量" />
+        <input value={source.proteinPer100g ?? ""} onChange={(event) => onChange({ ...source, proteinPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="蛋白质 g" className="plan-compact-control" />
+        <input value={source.fatPer100g ?? ""} onChange={(event) => onChange({ ...source, fatPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="脂肪 g" className="plan-compact-control" />
+        <input value={source.carbsPer100g ?? ""} onChange={(event) => onChange({ ...source, carbsPer100g: numberValue(event.target.value) })} inputMode="decimal" placeholder="碳水 g" className="plan-compact-control" />
       </div>
-      <p className="mt-2 text-xs text-slate-500">热量：{source.kcalPer100g || 0} kcal / 100g{source.notes ? ` · ${source.notes}` : ""}</p>
-      <button onClick={onSave} className="mt-3 flex min-h-11 items-center gap-1.5 rounded-lg bg-fuchsia-600 px-3 text-xs font-semibold text-white transition hover:bg-fuchsia-700"><Save size={14} />保存并绑定</button>
+      <p className="plan-source-note">热量：{source.kcalPer100g || 0} kcal / 100g{source.notes ? ` · ${source.notes}` : ""}</p>
+      <button onClick={onSave} className="plan-primary-action plan-nutrition-save"><Save size={14} />保存并绑定</button>
     </div>
   );
 }
 
 function emptyPresetItem(presetId: string): MealPresetItem {
   return { id: `${presetId}-${Date.now()}`, name: "新食物", portion: null, defaultGrams: null, kcal: 0, confidence: null, calculationSource: null, nutritionSourceId: null, nutritionSource: null };
+}
+
+function emptyManualPresetItem(): ManualPresetItem {
+  return { id: `manual-${Date.now()}-${Math.random().toString(36).slice(2)}`, nutritionSourceId: "", grams: "" };
+}
+
+function parsePositiveGrams(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function emptyNutritionSource(): NutritionSourceDraft {
@@ -2897,7 +2602,7 @@ function TodayMeals({
               <span className="journal-meal-meta"><strong>{slot.label}</strong><small>{latest ? mealTime(latest.createdAt, slot.time) : slot.time}</small></span>
               <span className="journal-meal-kcal">{latest ? kcal : "--"} <small>kcal</small></span>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={slot.image} alt="" />
+              <img src={slot.image} alt="" loading="lazy" decoding="async" />
             </button>
           );
         })}
@@ -2941,288 +2646,9 @@ function MealThumbnail({ url, label, compact }: { url: string | null; label: str
   return (
     <div className={`${sizeClass} shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white`}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={url} alt={label} className="h-full w-full object-cover" />
+      <img src={url} alt={label} className="h-full w-full object-cover" loading="lazy" decoding="async" />
     </div>
   );
-}
-
-function ComboTrendChart({ days, compact }: { days: DashboardDay[]; compact?: boolean }) {
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const width = 720;
-  const height = 260;
-  const padding = { top: 18, right: 26, bottom: 42, left: 44 };
-  const chartW = width - padding.left - padding.right;
-  const chartH = height - padding.top - padding.bottom;
-  const intake = days.map((day) => day.intakeKcal || 0);
-  const deficit = days.map((day) => day.deficitKcal);
-  const validDeficits = deficit.filter((value): value is number => value != null);
-  const maxValue = niceCeil(Math.max(500, ...intake, ...validDeficits.map((value) => Math.max(0, value))));
-  const minValue = Math.min(0, ...validDeficits);
-  const minAxis = minValue < 0 ? -niceCeil(Math.abs(minValue)) : 0;
-  const y = (value: number) => padding.top + ((maxValue - value) / (maxValue - minAxis || 1)) * chartH;
-  const zeroY = y(0);
-  const x = (index: number) => padding.left + (days.length <= 1 ? chartW / 2 : (chartW / (days.length - 1)) * index);
-  const bandW = chartW / Math.max(1, days.length);
-  const barWidth = Math.max(14, Math.min(44, bandW - 18));
-  const linePoints = deficit.map((value, index) => (value == null ? null : `${x(index)},${y(value)}`)).filter(Boolean).join(" ");
-  const ticks = minAxis < 0 ? [minAxis, 0, maxValue] : [0, Math.round(maxValue / 2), maxValue];
-
-  return (
-    <div className="overflow-hidden rounded-lg bg-slate-50">
-      <svg viewBox={`0 0 ${width} ${height}`} className={`${compact ? "h-44" : "h-64"} w-full`} role="img" aria-label="本周摄入热量柱状图和每日缺口折线图">
-        {ticks.map((tick) => (
-          <g key={tick}>
-            <line x1={padding.left} x2={width - padding.right} y1={y(tick)} y2={y(tick)} stroke="#e2e8f0" strokeWidth="1" />
-            <text x={padding.left - 8} y={y(tick) + 4} textAnchor="end" className="fill-slate-400 text-[11px]">
-              {Math.round(tick)}
-            </text>
-          </g>
-        ))}
-        {days.map((day, index) => {
-          const value = intake[index];
-          const top = y(value);
-          const barHeight = Math.max(2, zeroY - top);
-          return (
-            <g key={day.dateKey} className="group">
-              <rect x={x(index) - barWidth / 2} y={top} width={barWidth} height={barHeight} rx="5" fill="#aec7b3" opacity={value === 0 ? 0.25 : 0.88} />
-              <HoverBand
-                x={x(index)}
-                bandWidth={bandW}
-                chartTop={padding.top}
-                chartHeight={chartH}
-                width={width}
-                lines={[day.dateKey, `摄入 ${Math.round(day.intakeKcal || 0)} kcal`, `缺口 ${day.deficitKcal == null ? "未统计" : `${Math.round(day.deficitKcal)} kcal`}`]}
-                active={activeIndex === index}
-                onActivate={() => setActiveIndex((current) => (current === index ? null : index))}
-              />
-              <text x={x(index)} y={height - 18} textAnchor="middle" className="fill-slate-500 text-[12px]">
-                {day.dateKey.slice(5)}
-              </text>
-            </g>
-          );
-        })}
-        {linePoints ? <polyline points={linePoints} fill="none" stroke="#cf806f" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" /> : null}
-        {deficit.map((value, index) =>
-          value == null ? null : (
-            <g key={`${days[index]?.dateKey}-point`}>
-              <circle cx={x(index)} cy={y(value)} r="4.5" fill="#cf806f" />
-              <circle cx={x(index)} cy={y(value)} r="2" fill="#ffffff" />
-            </g>
-          )
-        )}
-      </svg>
-    </div>
-  );
-}
-
-function WeightLineChart({ days }: { days: DashboardDay[] }) {
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const width = 720;
-  const height = 260;
-  const padding = { top: 22, right: 26, bottom: 42, left: 48 };
-  const chartW = width - padding.left - padding.right;
-  const chartH = height - padding.top - padding.bottom;
-  const values = days.map((day) => day.weightKg).filter((value): value is number => value != null);
-  const minWeight = values.length ? Math.floor((Math.min(...values) - 0.4) * 10) / 10 : 70;
-  const maxWeight = values.length ? Math.ceil((Math.max(...values) + 0.4) * 10) / 10 : 80;
-  const x = (index: number) => padding.left + (days.length <= 1 ? chartW / 2 : (chartW / (days.length - 1)) * index);
-  const y = (value: number) => padding.top + ((maxWeight - value) / (maxWeight - minWeight || 1)) * chartH;
-  const points = days
-    .map((day, index) => (day.weightKg == null ? null : `${x(index)},${y(day.weightKg)}`))
-    .filter(Boolean)
-    .join(" ");
-  const bandW = chartW / Math.max(1, days.length);
-  const ticks = [minWeight, Number(((minWeight + maxWeight) / 2).toFixed(1)), maxWeight];
-
-  return (
-    <div className="overflow-hidden rounded-lg bg-slate-50">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full" role="img" aria-label="本周体重折线图">
-        {ticks.map((tick) => (
-          <g key={tick}>
-            <line x1={padding.left} x2={width - padding.right} y1={y(tick)} y2={y(tick)} stroke="#e2e8f0" strokeWidth="1" />
-            <text x={padding.left - 8} y={y(tick) + 4} textAnchor="end" className="fill-slate-400 text-[11px]">
-              {tick.toFixed(1)}
-            </text>
-          </g>
-        ))}
-        {points ? <polyline points={points} fill="none" stroke="#5f806b" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" /> : null}
-        {days.map((day, index) => (
-          <g key={day.dateKey} className="group">
-            {day.weightKg == null ? <circle cx={x(index)} cy={padding.top + chartH} r="3" fill="#cfdfd0" /> : <circle cx={x(index)} cy={y(day.weightKg)} r="5" fill="#5f806b" />}
-            <HoverBand
-              x={x(index)}
-              bandWidth={bandW}
-              chartTop={padding.top}
-              chartHeight={chartH}
-              width={width}
-              lines={[day.dateKey, `体重 ${day.weightKg == null ? "未录入" : `${day.weightKg.toFixed(1)} kg`}`]}
-              active={activeIndex === index}
-              onActivate={() => setActiveIndex((current) => (current === index ? null : index))}
-            />
-            <text x={x(index)} y={height - 18} textAnchor="middle" className="fill-slate-500 text-[12px]">
-              {day.dateKey.slice(5)}
-            </text>
-          </g>
-        ))}
-      </svg>
-    </div>
-  );
-}
-
-function FourWeekChart({ weeks }: { weeks: WeekSummary[] }) {
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const width = 720;
-  const height = 260;
-  const padding = { top: 22, right: 30, bottom: 42, left: 48 };
-  const chartW = width - padding.left - padding.right;
-  const chartH = height - padding.top - padding.bottom;
-  const deficits = weeks.map((week) => week.deficitKcal || 0);
-  const weights = weeks.map((week) => week.averageWeightKg).filter((value): value is number => value != null);
-  const maxValue = niceCeil(Math.max(500, ...deficits.map((value) => Math.max(0, value))));
-  const minValue = Math.min(0, ...deficits);
-  const minAxis = minValue < 0 ? -niceCeil(Math.abs(minValue)) : 0;
-  const yDeficit = (value: number) => padding.top + ((maxValue - value) / (maxValue - minAxis || 1)) * chartH;
-  const zeroY = yDeficit(0);
-  const minWeight = weights.length ? Math.floor((Math.min(...weights) - 0.4) * 10) / 10 : 70;
-  const maxWeight = weights.length ? Math.ceil((Math.max(...weights) + 0.4) * 10) / 10 : 80;
-  const yWeight = (value: number) => padding.top + ((maxWeight - value) / (maxWeight - minWeight || 1)) * chartH;
-  const x = (index: number) => padding.left + (weeks.length <= 1 ? chartW / 2 : (chartW / (weeks.length - 1)) * index);
-  const bandW = chartW / Math.max(1, weeks.length);
-  const barWidth = Math.max(30, Math.min(70, bandW - 28));
-  const weightPoints = weeks
-    .map((week, index) => (week.averageWeightKg == null ? null : `${x(index)},${yWeight(week.averageWeightKg)}`))
-    .filter(Boolean)
-    .join(" ");
-  const ticks = minAxis < 0 ? [minAxis, 0, maxValue] : [0, Math.round(maxValue / 2), maxValue];
-
-  return (
-    <div className="overflow-hidden rounded-lg bg-slate-50">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-64 w-full" role="img" aria-label="4 周热量缺口柱状图和体重折线图">
-        {ticks.map((tick) => (
-          <g key={tick}>
-            <line x1={padding.left} x2={width - padding.right} y1={yDeficit(tick)} y2={yDeficit(tick)} stroke="#e2e8f0" strokeWidth="1" />
-            <text x={padding.left - 8} y={yDeficit(tick) + 4} textAnchor="end" className="fill-slate-400 text-[11px]">
-              {Math.round(tick)}
-            </text>
-          </g>
-        ))}
-        {weeks.map((week, index) => {
-          const value = deficits[index];
-          const top = yDeficit(Math.max(0, value));
-          const bottom = yDeficit(Math.min(0, value));
-          const barY = value >= 0 ? top : zeroY;
-          const barHeight = Math.max(2, Math.abs(bottom - top));
-          return (
-            <g key={week.startDateKey} className="group">
-              <rect x={x(index) - barWidth / 2} y={barY} width={barWidth} height={barHeight} rx="6" fill="#aec7b3" opacity={value === 0 ? 0.25 : 0.88} />
-              <HoverBand
-                x={x(index)}
-                bandWidth={bandW}
-                chartTop={padding.top}
-                chartHeight={chartH}
-                width={width}
-                lines={[
-                  week.label,
-                  `缺口 ${Math.round(week.deficitKcal || 0)} kcal`,
-                  `周均体重 ${week.averageWeightKg == null ? "未录入" : `${week.averageWeightKg.toFixed(1)} kg`}`
-                ]}
-                active={activeIndex === index}
-                onActivate={() => setActiveIndex((current) => (current === index ? null : index))}
-              />
-              <text x={x(index)} y={height - 18} textAnchor="middle" className="fill-slate-500 text-[12px]">
-                {week.label}
-              </text>
-            </g>
-          );
-        })}
-        {weightPoints ? <polyline points={weightPoints} fill="none" stroke="#cf806f" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" /> : null}
-        {weeks.map((week, index) =>
-          week.averageWeightKg == null ? null : (
-            <g key={`${week.startDateKey}-weight`}>
-              <circle cx={x(index)} cy={yWeight(week.averageWeightKg)} r="4.5" fill="#cf806f" />
-              <circle cx={x(index)} cy={yWeight(week.averageWeightKg)} r="2" fill="#ffffff" />
-            </g>
-          )
-        )}
-      </svg>
-    </div>
-  );
-}
-
-function HoverBand({
-  x,
-  bandWidth,
-  chartTop,
-  chartHeight,
-  width,
-  lines,
-  active,
-  onActivate
-}: {
-  x: number;
-  bandWidth: number;
-  chartTop: number;
-  chartHeight: number;
-  width: number;
-  lines: string[];
-  active: boolean;
-  onActivate: () => void;
-}) {
-  const tooltipX = Math.min(width - 178, Math.max(54, x - 84));
-  const textX = tooltipX + 12;
-  return (
-    <>
-      <rect
-        x={x - bandWidth / 2}
-        y={chartTop}
-        width={bandWidth}
-        height={chartHeight}
-        fill="transparent"
-        className="cursor-pointer"
-        role="button"
-        tabIndex={0}
-        aria-label={lines.join("，")}
-        onClick={onActivate}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onActivate();
-          }
-        }}
-      />
-      <g className={`${active ? "opacity-100" : "opacity-0"} pointer-events-none transition-opacity group-hover:opacity-100 group-focus-within:opacity-100`}>
-        <line x1={x} x2={x} y1={chartTop} y2={chartTop + chartHeight} stroke="#64748b" strokeDasharray="4 4" />
-        <rect x={tooltipX} y={chartTop + 8} width="168" height={lines.length > 2 ? 72 : 54} rx="7" fill="#0f172a" opacity="0.94" />
-        {lines.map((line, index) => (
-          <text key={line} x={textX} y={chartTop + 29 + index * 18} className="fill-white text-[12px]">
-            {line}
-          </text>
-        ))}
-      </g>
-    </>
-  );
-}
-
-function SmallStat({ label, value, compact }: { label: string; value: string; compact?: boolean }) {
-  return (
-    <div className="min-w-0 rounded-lg border border-slate-100 bg-slate-50 p-3">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className={`mt-1 whitespace-nowrap font-semibold text-slate-950 ${compact ? "text-base" : "text-lg"}`}>{value}</p>
-    </div>
-  );
-}
-
-function niceCeil(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return 500;
-  const magnitude = 10 ** Math.floor(Math.log10(value));
-  const normalized = value / magnitude;
-  const nice = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
-  return nice * magnitude;
-}
-
-function latestWeightText(days: DashboardDay[]) {
-  const latest = [...days].reverse().find((day) => day.weightKg != null);
-  return latest?.weightKg == null ? "未录入" : `${latest.weightKg.toFixed(1)} kg`;
 }
 
 function latestWeeklyAverageWeightText(weeks: WeekSummary[]) {
@@ -3262,6 +2688,12 @@ function tabTransitionDirection(current: AppTab, next: AppTab): TabTransitionDir
   return nextIndex > currentIndex ? "forward" : "back";
 }
 
+function tabTransitionVariantFor(current: AppTab, next: AppTab): TabTransitionVariant {
+  if (current === "capture" || next === "capture") return "capture";
+  if (current === "more" || next === "more") return "panel";
+  return "lateral";
+}
+
 function defaultMealSlot(): MealSlot {
   const hour = new Date().getHours();
   if (hour < 10) return "breakfast";
@@ -3279,7 +2711,7 @@ function mealPreferenceLabel(preference: MealPreference) {
 }
 
 function defaultMealImage(slot: MealSlot) {
-  return MEAL_SLOTS.find((item) => item.key === slot)?.image || "/illustrations/meal-snack.png";
+  return MEAL_SLOTS.find((item) => item.key === slot)?.image || "/illustrations/meal-snack.webp";
 }
 
 function mealTime(value: string | undefined, fallback: string) {
@@ -3291,6 +2723,19 @@ function mealTime(value: string | undefined, fallback: string) {
 
 function formatWeightTime(value: string | null | undefined) {
   return value ? mealTime(value, "") : "";
+}
+
+function formatSyncDate(value: string | null | undefined) {
+  if (!value) return "尚未同步";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "尚未同步";
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
 }
 
 async function compressImageForUpload(file: File) {
