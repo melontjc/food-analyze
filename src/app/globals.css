@@ -1010,43 +1010,31 @@ small {
   display: grid;
   width: 100%;
   min-width: 0;
-  gap: 0.82rem;
+  gap: 0.88rem;
   overflow-x: hidden;
 }
 
 .plan-studio-hero {
   position: relative;
   display: flex;
-  min-height: 7.35rem;
+  min-height: 6.25rem;
   min-width: 0;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   overflow: hidden;
-  border: 1px solid rgba(132, 112, 91, 0.1);
-  border-radius: 1.45rem;
-  background:
-    linear-gradient(103deg, rgba(255, 253, 249, 0.98) 0%, rgba(255, 253, 249, 0.88) 55%, rgba(255, 253, 249, 0.2) 100%),
-    url("/illustrations/analysis-hero-paper-03.webp") center / cover no-repeat;
-  box-shadow: 0 0.95rem 2.35rem rgba(104, 88, 72, 0.09);
-  padding: 0.96rem;
+  padding: 0.42rem 0.14rem 0;
 }
 
 .plan-studio-hero::after {
-  content: "";
-  position: absolute;
-  inset: auto -2rem -2.4rem auto;
-  width: 9rem;
-  height: 8rem;
-  background: radial-gradient(circle, rgba(221, 120, 88, 0.15), transparent 68%);
-  pointer-events: none;
+  display: none;
 }
 
 .plan-studio-copy {
   position: relative;
   z-index: 1;
   min-width: 0;
-  max-width: 14.2rem;
+  max-width: 18rem;
 }
 
 .plan-studio-copy p,
@@ -1061,20 +1049,20 @@ small {
 }
 
 .plan-studio-copy h1 {
-  margin-top: 0.36rem;
+  margin-top: 0.42rem;
   color: var(--wellness-ink);
   font-family: var(--font-display);
-  font-size: var(--type-page);
+  font-size: clamp(2.18rem, 9vw, 2.82rem);
   font-weight: 600;
   letter-spacing: var(--tracking-display);
-  line-height: 1.02;
+  line-height: 0.98;
 }
 
 .plan-studio-copy span {
   display: block;
-  margin-top: 0.42rem;
+  margin-top: 0.52rem;
   color: var(--wellness-muted);
-  font-size: var(--type-meta);
+  font-size: 1rem;
   line-height: var(--leading-copy);
 }
 
@@ -1091,11 +1079,65 @@ small {
   gap: 0.34rem;
   border: 1px solid rgba(221, 120, 88, 0.18);
   border-radius: 999px;
-  background: rgba(244, 231, 216, 0.82);
-  padding: 0 0.9rem;
-  color: #c86549;
+  background: rgba(242, 248, 239, 0.84);
+  padding: 0 0.82rem;
+  color: var(--wellness-sage-dark);
   font-size: var(--type-caption);
   font-weight: 800;
+}
+
+.plan-status-strip {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgba(132, 112, 91, 0.14);
+  border-radius: 1.12rem;
+  background: rgba(255, 253, 249, 0.76);
+  box-shadow: 0 0.62rem 1.45rem rgba(104, 88, 72, 0.06);
+}
+
+.plan-status-strip button {
+  display: inline-flex;
+  min-height: 3.4rem;
+  min-width: 0;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0 0.56rem;
+  color: #607168;
+  font-size: var(--type-meta);
+  font-weight: 780;
+  line-height: 1.15;
+  transition: background 160ms ease, transform 160ms ease, opacity 160ms ease;
+}
+
+.plan-status-strip button + button {
+  border-left: 1px solid rgba(132, 112, 91, 0.14);
+}
+
+.plan-status-strip button:active {
+  background: rgba(242, 248, 239, 0.58);
+  transform: translateY(1px);
+}
+
+.plan-status-strip button:disabled {
+  opacity: 0.72;
+}
+
+.plan-status-strip svg {
+  flex: 0 0 auto;
+  color: var(--wellness-sage);
+}
+
+.plan-status-strip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .plan-stat-grid {
@@ -1161,19 +1203,19 @@ small {
 .plan-segmented {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.34rem;
+  gap: 0.28rem;
   border: 1px solid rgba(222, 212, 202, 0.65);
   border-radius: 1.24rem;
   background:
     linear-gradient(180deg, rgba(255, 253, 249, 0.9), rgba(255, 249, 242, 0.74)),
     rgba(255, 255, 255, 0.74);
-  box-shadow: 0 0.8rem 2rem rgba(99, 84, 70, 0.08);
-  padding: 0.34rem;
+  box-shadow: 0 0.58rem 1.35rem rgba(99, 84, 70, 0.06);
+  padding: 0.3rem;
 }
 
 .plan-segmented-item {
   display: flex;
-  min-height: 3.42rem;
+  min-height: 2.95rem;
   min-width: 0;
   flex-direction: column;
   align-items: center;
@@ -1199,9 +1241,116 @@ small {
 }
 
 .plan-segmented-item-active {
-  background: linear-gradient(145deg, #e98a65, #d96647);
-  color: #fffdf9;
-  box-shadow: 0 0.48rem 1.05rem rgba(211, 109, 76, 0.18);
+  background: rgba(239, 246, 236, 0.94);
+  color: var(--wellness-sage-dark);
+  box-shadow: 0 0.28rem 0.74rem rgba(69, 91, 72, 0.08);
+}
+
+.plan-first-guide {
+  display: grid;
+  min-width: 0;
+  gap: 0.72rem;
+  padding: 1.18rem 0.82rem 0.4rem;
+  text-align: center;
+}
+
+.plan-first-guide-visual {
+  position: relative;
+  min-height: 10.4rem;
+}
+
+.plan-first-guide-visual img {
+  user-select: none;
+  pointer-events: none;
+}
+
+.plan-first-guide-main {
+  position: absolute;
+  right: 11%;
+  bottom: 0;
+  left: 11%;
+  z-index: 2;
+  width: 78%;
+  max-height: 9.7rem;
+  object-fit: contain;
+  filter: drop-shadow(0 1.05rem 1.25rem rgba(104, 88, 72, 0.12));
+}
+
+.plan-first-guide-side {
+  position: absolute;
+  z-index: 1;
+  width: 24%;
+  max-height: 5.2rem;
+  object-fit: contain;
+  opacity: 0.92;
+  filter: drop-shadow(0 0.74rem 0.92rem rgba(104, 88, 72, 0.1));
+}
+
+.plan-first-guide-side-left {
+  bottom: 0.64rem;
+  left: 0;
+}
+
+.plan-first-guide-side-right {
+  right: 0.1rem;
+  bottom: 3.2rem;
+}
+
+.plan-first-guide-copy {
+  display: grid;
+  place-items: center;
+  gap: 0.46rem;
+}
+
+.plan-first-guide-copy > span {
+  display: inline-flex;
+  width: 2.64rem;
+  height: 2.64rem;
+  align-items: center;
+  justify-content: center;
+  color: var(--wellness-sage);
+}
+
+.plan-first-guide-copy h2 {
+  max-width: 17.5rem;
+  color: var(--wellness-ink);
+  font-family: var(--font-display);
+  font-size: clamp(1.58rem, 6.9vw, 2.04rem);
+  font-weight: 680;
+  letter-spacing: 0;
+  line-height: 1.12;
+}
+
+.plan-first-guide-copy p {
+  max-width: 18.5rem;
+  color: var(--wellness-muted);
+  font-size: 0.96rem;
+  font-weight: 560;
+  line-height: 1.56;
+}
+
+.plan-first-guide-actions {
+  display: grid;
+  gap: 0.58rem;
+  padding: 0.08rem 0.8rem 0;
+}
+
+.plan-first-guide-actions .plan-primary-action,
+.plan-first-guide-actions .plan-secondary-action {
+  min-height: 3.62rem;
+  border-radius: 1.06rem;
+  font-size: 1rem;
+}
+
+.plan-guide-primary {
+  gap: 0.72rem;
+}
+
+.plan-guide-secondary {
+  border-color: rgba(95, 128, 107, 0.48);
+  background: rgba(255, 253, 249, 0.56);
+  color: var(--wellness-sage-dark);
+  box-shadow: 0 0.28rem 0.8rem rgba(69, 91, 72, 0.05);
 }
 
 .plan-template-section,

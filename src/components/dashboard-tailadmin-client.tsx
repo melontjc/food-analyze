@@ -2039,38 +2039,64 @@ function QuickPresetsCard({
   const manualHasIncompleteRows = manualRows.some((row) => row.hasInput && (!row.source || row.gramsValue == null));
   const manualValidItemCount = manualRows.filter((row) => row.source && row.gramsValue != null).length;
   const manualCanSave = Boolean(nutritionSources.length && manualValidItemCount && !manualHasIncompleteRows && manualTotalKcal > 0);
+  const showFirstPresetGuide = studioView === "presets" && !presets.length && !manualCreating;
 
   return (
     <section className="plan-studio-page">
       <div className="plan-studio-hero">
         <div className="plan-studio-copy">
           <p>MEAL PLAN STUDIO</p>
-          <h1>计划</h1>
-          <span>管理常用餐食、个人营养库和 AI 模板拆解。</span>
+          <h1>常用餐计划</h1>
+          <span>把重复吃的餐食保存下来，下次一键计入。</span>
         </div>
         <button type="button" onClick={() => setStudioView("ai")} className="plan-hero-action">
           <Sparkles size={15} />
-          AI 新建
+          拆解模板
         </button>
       </div>
 
-      <div className="plan-stat-grid">
-        <button type="button" onClick={() => setStudioView("presets")} className="plan-stat-card">
-          <span><BookmarkPlus size={15} /></span>
-          <p>模板</p>
-          <strong>{presets.length}</strong>
+      <div className="plan-status-strip" aria-label="计划概览">
+        <button type="button" onClick={() => setStudioView("presets")}>
+          <BookmarkPlus size={16} />
+          <span>{presets.length} 个模板</span>
         </button>
-        <button type="button" onClick={() => setStudioView("library")} className="plan-stat-card">
-          <span><Database size={15} /></span>
-          <p>营养库</p>
-          <strong>{nutritionSources.length}</strong>
+        <button type="button" onClick={() => setStudioView("library")}>
+          <Leaf size={16} />
+          <span>{nutritionSources.length} 个营养库食物</span>
         </button>
-        <button type="button" onClick={() => favoritePreset && onUse(favoritePreset, configuredItems(favoritePreset))} disabled={!favoritePreset} className="plan-stat-card plan-stat-card-wide">
-          <span><Utensils size={15} /></span>
-          <p>最近常用</p>
-          <strong>{favoritePreset?.name || "待建立"}</strong>
+        <button type="button" onClick={() => favoritePreset && onUse(favoritePreset, configuredItems(favoritePreset))} disabled={!favoritePreset}>
+          <Utensils size={16} />
+          <span>最近常用：{favoritePreset?.name || "暂无"}</span>
         </button>
       </div>
+
+      {showFirstPresetGuide ? (
+        <section className="plan-first-guide" aria-label="建立第一份常用餐">
+          <div className="plan-first-guide-visual" aria-hidden="true">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="plan-first-guide-main" src="/illustrations/meal-lunch.webp" alt="" loading="lazy" decoding="async" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="plan-first-guide-side plan-first-guide-side-left" src="/illustrations/meal-breakfast.webp" alt="" loading="lazy" decoding="async" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="plan-first-guide-side plan-first-guide-side-right" src="/illustrations/meal-snack.webp" alt="" loading="lazy" decoding="async" />
+          </div>
+          <div className="plan-first-guide-copy">
+            <span><Utensils size={24} /></span>
+            <h2>先建立你的第一份常用餐</h2>
+            <p>把经常吃的早餐、午餐或晚餐保存为模板，下次记录更快更准。</p>
+          </div>
+          <div className="plan-first-guide-actions">
+            <button type="button" onClick={() => setStudioView("ai")} className="plan-primary-action plan-guide-primary">
+              <Sparkles size={20} />
+              AI 拆解一份常用餐
+            </button>
+            <button type="button" onClick={() => setManualCreating(true)} className="plan-secondary-action plan-guide-secondary">
+              <Leaf size={20} />
+              从营养库搭配
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <div className="plan-segmented" role="tablist" aria-label="计划页功能">
         {QUICK_STUDIO_TABS.map((tab) => (
@@ -2083,12 +2109,11 @@ function QuickPresetsCard({
             className={studioView === tab.key ? "plan-segmented-item plan-segmented-item-active" : "plan-segmented-item"}
           >
             <strong>{tab.label}</strong>
-            <small>{tab.hint}</small>
           </button>
         ))}
       </div>
 
-      {studioView === "presets" ? (
+      {studioView === "presets" && !showFirstPresetGuide ? (
         <div className="plan-template-section">
           <div className="plan-section-head">
             <div>
@@ -2213,14 +2238,7 @@ function QuickPresetsCard({
                 );
               })}
             </div>
-          ) : manualCreating ? null : (
-            <div className="plan-empty-card">
-              <Sparkles size={18} />
-              <strong>还没有常用餐食</strong>
-              <span>优先从营养库本地搭配，也可以去 AI 新建自动拆解。</span>
-              <button type="button" onClick={() => setManualCreating(true)} className="plan-primary-action">本地新建</button>
-            </div>
-          )}
+          ) : null}
         </div>
       ) : null}
 
